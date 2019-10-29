@@ -7,4 +7,7 @@ version = "0.1.0"
 [[package]]
 name = "runtime"
 version = "0.1.0"
+dependencies = [
+ "bytecode 0.1.0",
+]
 
