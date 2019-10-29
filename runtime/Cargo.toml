@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 bytecode = { path = "../bytecode" }
+slog = "2.5.2"
+thiserror = "1.0.4"
