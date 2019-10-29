@@ -5,7 +5,7 @@
 pub struct Program {
     /// Statically-allocated strings.
     pub string_table: Vec<String>,
-    pub instructions: Vec<Instruction>,
+    pub entrypoint: FunctionID,
     pub labels: Vec<usize>,
     /// All user-defined functions "linked" into this [`Program`].
     pub functions: Vec<Function>,

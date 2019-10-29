@@ -2,8 +2,12 @@
 
 mod machine;
 mod process;
+mod process_state;
 mod value;
 
-pub use crate::machine::{Machine, NopMachine};
-pub use crate::process::{Builder, Process};
-pub use crate::value::Value;
+pub use crate::{
+    machine::{Machine, NopMachine},
+    process::Process,
+    process_state::{ProcessState, Ctx, StackFrame, Fault},
+    value::Value,
+};
