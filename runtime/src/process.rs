@@ -1,5 +1,6 @@
-use crate::{Machine, NopMachine, ProcessState};
-use slog::{Discard, Logger};
+use crate::{Continuation, Ctx, Fault, Machine, ProcessState};
+use bytecode::Program;
+use slog::Logger;
 use std::sync::Arc;
 
 pub struct Process {
@@ -14,6 +15,18 @@ impl Process {
             logger,
             machine,
             state: ProcessState::default(),
+        }
+    }
+
+    pub fn run(&mut self, program: &Program) -> Result<(), Fault> {
+        loop {
+            let ctx = Ctx::new(&self.logger, &*self.machine);
+
+            match self.state.step(program, ctx) {
+                Continuation::Continue => continue,
+                Continuation::Halt => return Ok(()),
+                Continuation::Fault(fault) => return Err(fault),
+            }
         }
     }
 }

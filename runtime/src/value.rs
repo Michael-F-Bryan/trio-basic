@@ -24,9 +24,6 @@ impl Value {
             Type::Integer => Value::Integer(0),
             Type::Double => Value::Double(0.0),
             Type::String => Value::String(String::new()),
-            Type::Void => unreachable!(
-                "It's not possible to create an instance of `void` at runtime"
-            ),
         }
     }
 }

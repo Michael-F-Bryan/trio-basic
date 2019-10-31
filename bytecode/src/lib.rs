@@ -17,8 +17,13 @@ pub type FunctionID = usize;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Instruction {
-    /// Call a function.
-    Call {
+    /// Call a user-defined function.
+    CallUserFunction {
+        /// Which function to call.
+        function_id: FunctionID,
+    },
+    /// Call a builtin function.
+    CallBuiltinFunction {
         /// Which function to call.
         function_id: FunctionID,
         /// The number of arguments to pass to the function.
@@ -58,14 +63,13 @@ pub enum Instruction {
 pub struct Function {
     /// The function's name.
     pub name: String,
-    pub return_ty: Type,
+    pub return_ty: Option<Type>,
     /// The function's body.
     pub body: Vec<Instruction>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Type {
-    Void,
     Boolean,
     Integer,
     Double,

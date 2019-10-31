@@ -1,5 +1,5 @@
 #![feature(try_trait)]
-#![warn(intra_doc_link_resolution_failure)]
+#![deny(intra_doc_link_resolution_failure, private_in_public)]
 
 mod machine;
 mod process;
