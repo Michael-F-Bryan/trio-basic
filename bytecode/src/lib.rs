@@ -39,12 +39,12 @@ pub enum Instruction {
     /// Push a string from the string table to the top of the stack.
     PushString { string_id: StringIndex },
     /// Copy the value from a global variable onto the stack.
-    PushGlobal {
+    LoadGlobal {
         /// An index into the string table with the variable's name.
         variable_id: StringIndex,
     },
     /// Pop a value from the top of the stack and save it in a global variable.
-    PopGlobal { variable_id: StringIndex },
+    StoreGlobal { variable_id: StringIndex },
     /// Pop an item off the top of the stack.
     Pop,
     /// Pop an item from the stack, goto to the `true_label` if it is `true`,

@@ -56,8 +56,14 @@ impl ProcessState {
                     .ok_or_else(|| Fault::UnknownString { string_id })?;
                 self.values.push(Value::String(string.clone()));
             },
-            Instruction::PushGlobal { variable_id } => {
-                self.on_push_global(variable_id, strings, ctx)?
+            Instruction::LoadGlobal { variable_id } => {
+                self.on_load_global(variable_id, strings, ctx)?;
+            },
+            Instruction::StoreGlobal { variable_id } => {
+                self.on_store_global(variable_id, strings, ctx)?;
+            },
+            Instruction::Pop => {
+                self.values.pop().ok_or_else(|| Fault::EmptyStack)?;
             },
 
             _ => unimplemented!("We can't yet handle {:?}", instruction),
@@ -67,7 +73,27 @@ impl ProcessState {
         Continuation::Continue
     }
 
-    fn on_push_global(
+    fn on_store_global(
+        &mut self,
+        string_id: StringIndex,
+        strings: &[String],
+        ctx: Ctx<'_>,
+    ) -> Continuation {
+        let value = self
+            .values
+            .pop()
+            .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
+
+        let variable_name = strings
+            .get(string_id)
+            .ok_or_else(|| Fault::UnknownString { string_id })?;
+
+        ctx.machine.store_global(variable_name, value);
+
+        Continuation::Continue
+    }
+
+    fn on_load_global(
         &mut self,
         string_id: StringIndex,
         strings: &[String],
@@ -201,6 +227,8 @@ pub enum Fault {
     InvalidLabel(LabelIndex),
     #[error("Trying to execute an instruction when there are no stack frames")]
     EmptyStack,
+    #[error("Tried to pop a value when nothing is on the stack")]
+    PoppedFromEmptyStack,
     #[error("No such function with ID {0}")]
     UnknownFunction(FunctionID),
     #[error("No such string with ID {string_id}")]
@@ -360,14 +388,42 @@ mod tests {
         );
     });
 
-    ps_test!(push_global_variable, |mac, ctx, s, mut state| {
+    ps_test!(get_global_variable, |mac, ctx, s, mut state| {
         mac.store_global(&s[1], Value::Integer(42));
-        let instr = Instruction::PushGlobal { variable_id: 1 };
+        let instr = Instruction::LoadGlobal { variable_id: 1 };
 
         let cont = state.execute(instr, &s, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::Integer(42));
+    });
+
+    ps_test!(set_global_variable, |mac, ctx, s, mut state| {
+        let value = Value::Integer(42);
+        state.values.push(value.clone());
+        let instr = Instruction::StoreGlobal { variable_id: 1 };
+
+        let cont = state.execute(instr, &s, ctx);
+
+        assert_eq!(cont, Continuation::Continue);
+        assert!(state.values.is_empty());
+        let got = mac.load_global(&s[1]).unwrap();
+        assert_eq!(got, value);
+    });
+
+    ps_test!(pop_from_stack, |mac, ctx, s, mut state| {
+        state.values.push(Value::Integer(42));
+
+        let cont = state.execute(Instruction::Pop, &s, ctx);
+
+        assert_eq!(cont, Continuation::Continue);
+        assert!(state.values.is_empty());
+    });
+
+    ps_test!(pop_from_empty_stack_is_error, |mac, ctx, s, mut state| {
+        let cont = state.execute(Instruction::Pop, &s, ctx);
+
+        assert_eq!(cont, Continuation::Fault(Fault::EmptyStack));
     });
 }
