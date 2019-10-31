@@ -7,7 +7,7 @@ mod process_state;
 mod value;
 
 pub use crate::{
-    machine::{Machine, NopMachine},
+    machine::{BasicMachine, Machine},
     process::Process,
     process_state::{Continuation, Ctx, Fault, ProcessState, StackFrame},
     value::Value,

@@ -6,7 +6,6 @@ pub struct Program {
     /// Statically-allocated strings.
     pub string_table: Vec<String>,
     pub entrypoint: FunctionID,
-    pub labels: Vec<usize>,
     /// All user-defined functions "linked" into this [`Program`].
     pub functions: Vec<Function>,
 }
@@ -29,7 +28,7 @@ pub enum Instruction {
         /// The number of arguments to pass to the function.
         args: usize,
     },
-    /// Jump to a labeled instruction.
+    /// Jump to a labeled instruction within the current function.
     Goto { label: LabelIndex },
     /// Push an `[i32`] onto the top of the stack.
     PushInteger(i32),
@@ -66,6 +65,7 @@ pub struct Function {
     pub return_ty: Option<Type>,
     /// The function's body.
     pub body: Vec<Instruction>,
+    pub labels: Vec<usize>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
