@@ -79,16 +79,17 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { Debug::fmt(self, f) }
 }
 
+/// A poor man's `std::slice::SliceExt` because the original trait is sealed.
+pub trait SliceExt<Index> {
+    type Output;
+
+    fn get_(&self, index: Index) -> Option<&Self::Output>;
+}
+
 macro_rules! newtype_index {
     ($name:ident -> $slice:ty) => {
         #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
         pub struct $name(pub usize);
-
-        impl $name {
-            pub fn lookup(self, target: &[$slice]) -> Option<&$slice> {
-                target.get(self.0)
-            }
-        }
 
         impl Display for $name {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -109,6 +110,14 @@ macro_rules! newtype_index {
 
         impl From<usize> for $name {
             fn from(other: usize) -> $name { $name(other) }
+        }
+
+        impl SliceExt<$name> for [$slice] {
+            type Output = $slice;
+
+            fn get_(&self, index: $name) -> Option<&Self::Output> {
+                self.get(index.0)
+            }
         }
 
         impl std::ops::Index<$name> for Vec<$slice> {

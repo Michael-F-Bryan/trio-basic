@@ -2,7 +2,7 @@ use crate::{CallFailed, Machine, Process, Value};
 #[allow(unused_imports)]
 use bytecode::Function;
 use bytecode::{
-    FunctionID, Instruction, LabelIndex, Program, StringIndex, Type,
+    FunctionID, Instruction, LabelIndex, Program, SliceExt, StringIndex, Type,
 };
 use slog::Logger;
 use std::ops::Try;
@@ -53,8 +53,9 @@ impl ProcessState {
             Instruction::PushDouble(d) => self.values.push(Value::Double(d)),
             Instruction::PushBoolean(b) => self.values.push(Value::Boolean(b)),
             Instruction::PushString { string } => {
-                let string = string
-                    .lookup(&program.string_table)
+                let string = program
+                    .string_table
+                    .get_(string)
                     .ok_or_else(|| Fault::UnknownString { string })?;
                 self.values.push(Value::String(string.clone()));
             },
@@ -107,8 +108,9 @@ impl ProcessState {
         let arg_start = self.values.len() - arg_count;
         let args = &self.values[arg_start..];
 
-        let function_name = function
-            .lookup(&program.string_table)
+        let function_name = program
+            .string_table
+            .get_(function)
             .ok_or_else(|| Fault::UnknownString { string: function })?;
 
         slog::debug!(ctx.logger, "Calling a builtin function";
@@ -135,8 +137,9 @@ impl ProcessState {
         current_function: &Function,
     ) -> Result<(), Fault> {
         let mut sf = self.stack_frame_mut().expect("unreachable");
-        sf.ip = label
-            .lookup(&current_function.labels)
+        sf.ip = current_function
+            .labels
+            .get_(label)
             .copied()
             .ok_or_else(|| Fault::UnknownLabel(label))?;
 
@@ -176,8 +179,8 @@ impl ProcessState {
             .pop()
             .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
 
-        let variable_name = string
-            .lookup(&strings)
+        let variable_name = strings
+            .get_(string)
             .ok_or_else(|| Fault::UnknownString { string })?;
 
         ctx.machine.store_global(variable_name, value);
@@ -191,8 +194,8 @@ impl ProcessState {
         strings: &[String],
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
-        let variable_name = string
-            .lookup(&strings)
+        let variable_name = strings
+            .get_(string)
             .ok_or_else(|| Fault::UnknownString { string })?;
 
         let value = ctx
@@ -255,8 +258,9 @@ impl ProcessState {
     ) -> Result<&'a Function, Fault> {
         let StackFrame { function, .. } = self.stack_frame()?;
 
-        function
-            .lookup(&program.functions)
+        program
+            .functions
+            .get_(function)
             .ok_or_else(|| Fault::UnknownFunction(function))
     }
 
