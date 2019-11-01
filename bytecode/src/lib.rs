@@ -1,7 +1,9 @@
 //! Internal bytecode representation.
 
+use std::fmt::{self, Debug, Display, Formatter};
+
 /// A fully compiled bytecode program.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Program {
     /// Statically-allocated strings.
     pub string_table: Vec<String>,
@@ -74,4 +76,8 @@ pub enum Type {
     Integer,
     Double,
     String,
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { Debug::fmt(self, f) }
 }

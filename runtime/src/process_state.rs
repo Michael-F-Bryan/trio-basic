@@ -1,7 +1,9 @@
 use crate::{Machine, Process, Value};
 #[allow(unused_imports)]
 use bytecode::Function;
-use bytecode::{FunctionID, Instruction, LabelIndex, Program, StringIndex};
+use bytecode::{
+    FunctionID, Instruction, LabelIndex, Program, StringIndex, Type,
+};
 use slog::Logger;
 use std::ops::Try;
 
@@ -33,37 +35,53 @@ impl ProcessState {
             "instruction" => format_args!("{:?}", instruction),
             self.stack_frame()?);
 
-        self.execute(instruction, &program.string_table, ctx)
+        self.execute(instruction, &program, ctx)
     }
 
     fn execute(
         &mut self,
         instruction: Instruction,
-        strings: &[String],
+        program: &Program,
         ctx: Ctx<'_>,
     ) -> Continuation {
         match instruction {
             Instruction::Return => return self.on_return(),
             Instruction::CallUserFunction { function_id } => {
-                return self.on_call_user_func(function_id, ctx)
+                self.on_call_user_func(function_id, ctx)?;
             },
             Instruction::PushInteger(i) => self.values.push(Value::Integer(i)),
             Instruction::PushDouble(d) => self.values.push(Value::Double(d)),
             Instruction::PushBoolean(b) => self.values.push(Value::Boolean(b)),
             Instruction::PushString { string_id } => {
-                let string = strings
+                let string = program
+                    .string_table
                     .get(string_id)
                     .ok_or_else(|| Fault::UnknownString { string_id })?;
                 self.values.push(Value::String(string.clone()));
             },
             Instruction::LoadGlobal { variable_id } => {
-                self.on_load_global(variable_id, strings, ctx)?;
+                self.on_load_global(variable_id, &program.string_table, ctx)?;
             },
             Instruction::StoreGlobal { variable_id } => {
-                self.on_store_global(variable_id, strings, ctx)?;
+                self.on_store_global(variable_id, &program.string_table, ctx)?;
             },
             Instruction::Pop => {
                 self.values.pop().ok_or_else(|| Fault::EmptyStack)?;
+            },
+            Instruction::Branch {
+                true_label,
+                false_label,
+            } => {
+                self.on_branch(
+                    true_label,
+                    false_label,
+                    self.current_function(program)?,
+                )?;
+                return Continuation::Continue;
+            },
+            Instruction::Goto { label } => {
+                self.on_goto(label, self.current_function(program)?)?;
+                return Continuation::Continue;
             },
 
             _ => unimplemented!("We can't yet handle {:?}", instruction),
@@ -73,12 +91,49 @@ impl ProcessState {
         Continuation::Continue
     }
 
+    fn on_goto(
+        &mut self,
+        label_id: LabelIndex,
+        current_function: &Function,
+    ) -> Result<(), Fault> {
+        let mut sf = self.stack_frame_mut().expect("unreachable");
+        sf.ip = current_function
+            .labels
+            .get(label_id)
+            .copied()
+            .ok_or_else(|| Fault::UnknownLabel(label_id))?;
+
+        Ok(())
+    }
+
+    fn on_branch(
+        &mut self,
+        true_label: LabelIndex,
+        false_label: LabelIndex,
+        current_function: &Function,
+    ) -> Result<(), Fault> {
+        let condition = match self.values.pop() {
+            Some(Value::Boolean(cond)) => cond,
+            Some(other) => {
+                return Err(Fault::TypeError {
+                    found: other.ty(),
+                    expected: Type::Boolean,
+                })
+            },
+            None => return Err(Fault::PoppedFromEmptyStack),
+        };
+
+        let label_id = if condition { true_label } else { false_label };
+
+        self.on_goto(label_id, current_function)
+    }
+
     fn on_store_global(
         &mut self,
         string_id: StringIndex,
         strings: &[String],
         ctx: Ctx<'_>,
-    ) -> Continuation {
+    ) -> Result<(), Fault> {
         let value = self
             .values
             .pop()
@@ -90,7 +145,7 @@ impl ProcessState {
 
         ctx.machine.store_global(variable_name, value);
 
-        Continuation::Continue
+        Ok(())
     }
 
     fn on_load_global(
@@ -98,7 +153,7 @@ impl ProcessState {
         string_id: StringIndex,
         strings: &[String],
         ctx: Ctx<'_>,
-    ) -> Continuation {
+    ) -> Result<(), Fault> {
         let variable_name = strings
             .get(string_id)
             .ok_or_else(|| Fault::UnknownString { string_id })?;
@@ -109,7 +164,7 @@ impl ProcessState {
             .ok_or_else(|| Fault::UnknownGlobal(variable_name.to_string()))?;
         self.values.push(value);
 
-        Continuation::Continue
+        Ok(())
     }
 
     fn advance_ip(&mut self) {
@@ -123,14 +178,14 @@ impl ProcessState {
         &mut self,
         function_id: FunctionID,
         ctx: Ctx<'_>,
-    ) -> Continuation {
+    ) -> Result<(), Fault> {
         self.stack.push(StackFrame { function_id, ip: 0 });
         slog::trace!(ctx.logger, "Calling a user function";
                     "function-id" => function_id,
                     "new-stack-depth" => self.stack.len());
 
         // TODO: Do we want to check for infinite recursion?
-        Continuation::Continue
+        Ok(())
     }
 
     fn on_return(&mut self) -> Continuation {
@@ -157,18 +212,25 @@ impl ProcessState {
         self.stack.last_mut().ok_or(Fault::EmptyStack)
     }
 
+    fn current_function<'a>(
+        &self,
+        program: &'a Program,
+    ) -> Result<&'a Function, Fault> {
+        let StackFrame { function_id, .. } = self.stack_frame()?;
+
+        program
+            .functions
+            .get(function_id)
+            .ok_or_else(|| Fault::UnknownFunction(function_id))
+    }
+
     fn fetch(
         &self,
         program: &Program,
         logger: &Logger,
     ) -> Result<Instruction, Fault> {
-        let stack_frame = self.stack_frame()?;
-        let StackFrame { function_id, ip } = stack_frame;
-
-        let function = program
-            .functions
-            .get(function_id)
-            .ok_or_else(|| Fault::UnknownFunction(function_id))?;
+        let StackFrame { function_id, ip } = self.stack_frame()?;
+        let function = self.current_function(program)?;
 
         let instruction = function.body.get(ip).copied().ok_or_else(|| {
             Fault::InstructionOutOfBounds {
@@ -179,7 +241,7 @@ impl ProcessState {
 
         slog::trace!(logger, "Decoded an instruction";
             "instruction" => format_args!("{:?}", instruction),
-            stack_frame);
+            self.stack_frame()?);
 
         Ok(instruction)
     }
@@ -224,7 +286,7 @@ impl slog::KV for StackFrame {
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Fault {
     #[error("No such label with index {0}")]
-    InvalidLabel(LabelIndex),
+    UnknownLabel(LabelIndex),
     #[error("Trying to execute an instruction when there are no stack frames")]
     EmptyStack,
     #[error("Tried to pop a value when nothing is on the stack")]
@@ -233,6 +295,8 @@ pub enum Fault {
     UnknownFunction(FunctionID),
     #[error("No such string with ID {string_id}")]
     UnknownString { string_id: StringIndex },
+    #[error("Expected a {expected} but found {found}")]
+    TypeError { found: Type, expected: Type },
     #[error("No global called \"{0}\"")]
     UnknownGlobal(String),
     #[error("Instruction out of bounds for function {function}")]
@@ -275,7 +339,7 @@ mod tests {
     use std::sync::Arc;
 
     macro_rules! ps_test {
-        ($name:ident, |$machine:ident, $ctx:ident, $strings:ident, mut $state:ident| $body:block) => {
+        ($name:ident, |$machine:ident, $ctx:ident, $program:ident, mut $state:ident| $body:block) => {
             #[test]
             fn $name() {
                 let logger = Logger::root(Discard, slog::o!());
@@ -288,19 +352,28 @@ mod tests {
 
                 let $ctx = Ctx::new(&logger, &*$machine);
 
-                let $strings = vec![
-                    String::from("some string"),
-                    String::from("global"),
-                    String::from("some_function"),
-                ];
+                let $program = Program {
+                    string_table: vec![
+                        String::from("some string"),
+                        String::from("global"),
+                        String::from("some_function"),
+                    ],
+                    functions: vec![Function {
+                        name: String::from("first"),
+                        labels: vec![1, 2, 3],
+                        body: Vec::new(),
+                        return_ty: None,
+                    }],
+                    ..Default::default()
+                };
 
                 $body
             }
         };
     }
 
-    ps_test!(return_from_last_stack_frame, |_mac, ctx, _s, mut state| {
-        let cont = state.execute(Instruction::Return, &[], ctx);
+    ps_test!(return_from_last_stack_frame, |_mac, ctx, p, mut state| {
+        let cont = state.execute(Instruction::Return, &p, ctx);
 
         assert_eq!(cont, Continuation::Halt);
         assert!(state.stack.is_empty());
@@ -308,23 +381,23 @@ mod tests {
 
     ps_test!(
         return_from_penultimate_stack_frame,
-        |_mac, ctx, _s, mut state| {
+        |_mac, ctx, p, mut state| {
             state.stack.push(StackFrame {
                 function_id: 0,
                 ip: 0,
             });
 
-            let cont = state.execute(Instruction::Return, &[], ctx);
+            let cont = state.execute(Instruction::Return, &p, ctx);
 
             assert_eq!(cont, Continuation::Continue);
             assert_eq!(state.stack.len(), 1);
         }
     );
 
-    ps_test!(call_user_function_no_args, |_mac, ctx, _s, mut state| {
+    ps_test!(call_user_function_no_args, |_mac, ctx, p, mut state| {
         let instr = Instruction::CallUserFunction { function_id: 42 };
 
-        let cont = state.execute(instr, &[], ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.stack.len(), 2);
@@ -332,55 +405,55 @@ mod tests {
             state.stack.last().unwrap(),
             &StackFrame {
                 function_id: 42,
-                ip: 0
+                ip: 1
             }
         );
     });
 
-    ps_test!(push_int, |_mac, ctx, _s, mut state| {
+    ps_test!(push_int, |_mac, ctx, p, mut state| {
         let instr = Instruction::PushInteger(42);
 
-        let cont = state.execute(instr, &[], ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::Integer(42));
     });
 
-    ps_test!(push_double, |_mac, ctx, _s, mut state| {
+    ps_test!(push_double, |_mac, ctx, p, mut state| {
         let instr = Instruction::PushDouble(3.14);
 
-        let cont = state.execute(instr, &[], ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::Double(3.14));
     });
 
-    ps_test!(push_bool, |_mac, ctx, _s, mut state| {
+    ps_test!(push_bool, |_mac, ctx, p, mut state| {
         let instr = Instruction::PushBoolean(true);
 
-        let cont = state.execute(instr, &[], ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::Boolean(true));
     });
 
-    ps_test!(push_string_from_string_pool, |_mac, ctx, s, mut state| {
+    ps_test!(push_string_from_string_pool, |_mac, ctx, p, mut state| {
         let instr = Instruction::PushString { string_id: 0 };
 
-        let cont = state.execute(instr, &s, ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::String(String::from("some string")));
     });
 
-    ps_test!(push_unknown_string, |_mac, ctx, s, mut state| {
+    ps_test!(push_unknown_string, |_mac, ctx, p, mut state| {
         let instr = Instruction::PushString { string_id: 42 };
 
-        let cont = state.execute(instr, &s, ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(
             cont,
@@ -388,42 +461,120 @@ mod tests {
         );
     });
 
-    ps_test!(get_global_variable, |mac, ctx, s, mut state| {
-        mac.store_global(&s[1], Value::Integer(42));
+    ps_test!(get_global_variable, |mac, ctx, p, mut state| {
+        mac.store_global(&p.string_table[1], Value::Integer(42));
         let instr = Instruction::LoadGlobal { variable_id: 1 };
 
-        let cont = state.execute(instr, &s, ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert_eq!(state.values.len(), 1);
         assert_eq!(state.values[0], Value::Integer(42));
     });
 
-    ps_test!(set_global_variable, |mac, ctx, s, mut state| {
+    ps_test!(set_global_variable, |mac, ctx, p, mut state| {
         let value = Value::Integer(42);
         state.values.push(value.clone());
         let instr = Instruction::StoreGlobal { variable_id: 1 };
 
-        let cont = state.execute(instr, &s, ctx);
+        let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert!(state.values.is_empty());
-        let got = mac.load_global(&s[1]).unwrap();
+        let got = mac.load_global(&p.string_table[1]).unwrap();
         assert_eq!(got, value);
     });
 
-    ps_test!(pop_from_stack, |mac, ctx, s, mut state| {
+    ps_test!(pop_from_stack, |mac, ctx, p, mut state| {
         state.values.push(Value::Integer(42));
 
-        let cont = state.execute(Instruction::Pop, &s, ctx);
+        let cont = state.execute(Instruction::Pop, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         assert!(state.values.is_empty());
     });
 
-    ps_test!(pop_from_empty_stack_is_error, |mac, ctx, s, mut state| {
-        let cont = state.execute(Instruction::Pop, &s, ctx);
+    ps_test!(pop_from_empty_stack_is_error, |mac, ctx, p, mut state| {
+        let cont = state.execute(Instruction::Pop, &p, ctx);
 
         assert_eq!(cont, Continuation::Fault(Fault::EmptyStack));
+    });
+
+    ps_test!(if_with_empty_stack_is_error, |mac, ctx, p, mut state| {
+        let instr = Instruction::Branch {
+            true_label: 0,
+            false_label: 0,
+        };
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(cont, Continuation::Fault(Fault::PoppedFromEmptyStack));
+    });
+
+    ps_test!(if_with_non_boolean_is_error, |mac, ctx, p, mut state| {
+        let instr = Instruction::Branch {
+            true_label: 0,
+            false_label: 0,
+        };
+        state.values.push(Value::Integer(42));
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(
+            cont,
+            Continuation::Fault(Fault::TypeError {
+                found: Type::Integer,
+                expected: Type::Boolean,
+            })
+        );
+    });
+
+    ps_test!(take_true_branch, |mac, ctx, p, mut state| {
+        let instr = Instruction::Branch {
+            true_label: 1,
+            false_label: 42,
+        };
+        state.values.push(Value::Boolean(true));
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(cont, Continuation::Continue);
+        let sf = state.stack_frame().unwrap();
+        let func = &p.functions[sf.function_id];
+        assert_eq!(sf.ip, func.labels[1]);
+    });
+
+    ps_test!(take_false_branch, |mac, ctx, p, mut state| {
+        let instr = Instruction::Branch {
+            true_label: 1,
+            false_label: 2,
+        };
+        state.values.push(Value::Boolean(false));
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(cont, Continuation::Continue);
+        let sf = state.stack_frame().unwrap();
+        let func = &p.functions[sf.function_id];
+        assert_eq!(sf.ip, func.labels[2]);
+    });
+
+    ps_test!(goto_valid_label, |mac, ctx, p, mut state| {
+        let instr = Instruction::Goto { label: 2 };
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(cont, Continuation::Continue);
+        let sf = state.stack_frame().unwrap();
+        let func = &p.functions[sf.function_id];
+        assert_eq!(sf.ip, func.labels[2]);
+    });
+
+    ps_test!(goto_invalid_label, |mac, ctx, p, mut state| {
+        let instr = Instruction::Goto { label: 42 };
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(cont, Continuation::Fault(Fault::UnknownLabel(42)));
     });
 }
