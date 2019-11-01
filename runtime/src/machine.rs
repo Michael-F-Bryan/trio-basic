@@ -26,6 +26,18 @@ pub struct BasicMachine {
     >,
 }
 
+impl BasicMachine {
+    pub fn new() -> Self { BasicMachine::default() }
+
+    pub fn register_function<F>(&self, name: &str, function: F)
+    where
+        F: Fn(&[Value]) -> Result<Option<Value>, CallFailed> + 'static,
+    {
+        let mut functions = self.functions.lock().unwrap();
+        functions.insert(name.to_string(), Box::new(function));
+    }
+}
+
 impl Machine for BasicMachine {
     fn load_global(&self, name: &str) -> Option<Value> {
         self.globals.lock().unwrap().get(name).cloned()
@@ -52,4 +64,6 @@ impl Machine for BasicMachine {
 pub enum CallFailed {
     #[error("Unknown function")]
     UnknownFunction,
+    #[error("{0}")]
+    Custom(&'static str),
 }

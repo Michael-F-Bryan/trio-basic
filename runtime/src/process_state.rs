@@ -384,7 +384,7 @@ mod tests {
     use super::*;
     use crate::BasicMachine;
     use slog::{Discard, Logger};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     macro_rules! ps_test {
         ($name:ident, |$machine:ident, $ctx:ident, $program:ident, mut $state:ident| $body:block) => {
@@ -625,4 +625,107 @@ mod tests {
 
         assert_eq!(cont, Continuation::Fault(Fault::UnknownLabel(42)));
     });
+
+    ps_test!(
+        call_a_builtin_function_with_no_args_and_returning_integer,
+        |mac, ctx, p, mut state| {
+            let expected = Value::Double(3.14);
+            let expected_2 = expected.clone();
+            mac.register_function("some_function", move |args| {
+                assert!(args.is_empty());
+                Ok(Some(expected_2.clone()))
+            });
+            let instr = Instruction::CallBuiltinFunction {
+                function_id: 2,
+                args: 0,
+            };
+
+            let cont = state.execute(instr, &p, ctx);
+
+            assert_eq!(cont, Continuation::Continue);
+            assert_eq!(state.values.len(), 1);
+            assert_eq!(state.values[0], expected);
+        }
+    );
+
+    ps_test!(
+        call_a_builtin_function_with_insufficient_args,
+        |mac, ctx, p, mut state| {
+            let instr = Instruction::CallBuiltinFunction {
+                function_id: 2,
+                args: 3,
+            };
+
+            let cont = state.execute(instr, &p, ctx);
+
+            assert_eq!(cont, Continuation::Fault(Fault::PoppedFromEmptyStack));
+        }
+    );
+
+    ps_test!(call_unknown_function, |mac, ctx, p, mut state| {
+        let instr = Instruction::CallBuiltinFunction {
+            function_id: 1,
+            args: 0,
+        };
+
+        let cont = state.execute(instr, &p, ctx);
+
+        assert_eq!(
+            cont,
+            Continuation::Fault(Fault::CallFailed {
+                function_name: 1,
+                inner: CallFailed::UnknownFunction,
+            })
+        );
+    });
+
+    ps_test!(
+        call_builtin_which_returned_an_error,
+        |mac, ctx, p, mut state| {
+            let err = CallFailed::Custom("Oops...");
+            mac.register_function("some_function", move |_| Err(err));
+            let instr = Instruction::CallBuiltinFunction {
+                function_id: 2,
+                args: 0,
+            };
+
+            let cont = state.execute(instr, &p, ctx);
+
+            assert_eq!(
+                cont,
+                Continuation::Fault(Fault::CallFailed {
+                    function_name: 2,
+                    inner: err,
+                })
+            );
+        }
+    );
+
+    ps_test!(
+        call_a_builtin_function_with_3_args,
+        |mac, ctx, p, mut state| {
+            let got_args = Arc::new(Mutex::new(Vec::new()));
+            let c2 = Arc::clone(&got_args);
+            mac.register_function("some_function", move |args| {
+                c2.lock().unwrap().extend(args.iter().cloned());
+                Ok(None)
+            });
+            let instr = Instruction::CallBuiltinFunction {
+                function_id: 2,
+                args: 3,
+            };
+            let expected = vec![
+                Value::Boolean(true),
+                Value::Integer(42),
+                Value::Double(3.14),
+            ];
+            state.values.extend(expected.iter().cloned());
+
+            let cont = state.execute(instr, &p, ctx);
+
+            assert_eq!(cont, Continuation::Continue);
+            let got_args = got_args.lock().unwrap();
+            assert_eq!(*got_args, expected);
+        }
+    );
 }
