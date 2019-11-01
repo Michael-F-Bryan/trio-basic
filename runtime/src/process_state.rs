@@ -19,9 +19,9 @@ pub struct ProcessState {
 impl ProcessState {
     pub fn empty() -> Self { ProcessState::default() }
 
-    pub fn at_function_entry(function_id: FunctionID) -> Self {
+    pub fn at_function_entry(function: FunctionID) -> Self {
         ProcessState {
-            stack: vec![StackFrame { function_id, ip: 0 }],
+            stack: vec![StackFrame { function, ip: 0 }],
             values: Vec::new(),
         }
     }
@@ -46,24 +46,23 @@ impl ProcessState {
     ) -> Continuation {
         match instruction {
             Instruction::Return => return self.on_return(),
-            Instruction::CallUserFunction { function_id } => {
-                self.on_call_user_func(function_id, ctx)?;
+            Instruction::CallUserFunction { function } => {
+                self.on_call_user_func(function, ctx)?;
             },
             Instruction::PushInteger(i) => self.values.push(Value::Integer(i)),
             Instruction::PushDouble(d) => self.values.push(Value::Double(d)),
             Instruction::PushBoolean(b) => self.values.push(Value::Boolean(b)),
-            Instruction::PushString { string_id } => {
-                let string = program
-                    .string_table
-                    .get(string_id)
-                    .ok_or_else(|| Fault::UnknownString { string_id })?;
+            Instruction::PushString { string } => {
+                let string = string
+                    .lookup(&program.string_table)
+                    .ok_or_else(|| Fault::UnknownString { string })?;
                 self.values.push(Value::String(string.clone()));
             },
-            Instruction::LoadGlobal { variable_id } => {
-                self.on_load_global(variable_id, &program.string_table, ctx)?;
+            Instruction::LoadGlobal { variable } => {
+                self.on_load_global(variable, &program.string_table, ctx)?;
             },
-            Instruction::StoreGlobal { variable_id } => {
-                self.on_store_global(variable_id, &program.string_table, ctx)?;
+            Instruction::StoreGlobal { variable } => {
+                self.on_store_global(variable, &program.string_table, ctx)?;
             },
             Instruction::Pop => {
                 self.values
@@ -85,8 +84,8 @@ impl ProcessState {
                 self.on_goto(label, self.current_function(program)?)?;
                 return Continuation::Continue;
             },
-            Instruction::CallBuiltinFunction { function_id, args } => {
-                self.on_call_builtin(function_id, args, program, ctx)?
+            Instruction::CallBuiltinFunction { function, args } => {
+                self.on_call_builtin(function, args, program, ctx)?
             },
         }
 
@@ -96,7 +95,7 @@ impl ProcessState {
 
     fn on_call_builtin(
         &mut self,
-        function_id: StringIndex,
+        function: StringIndex,
         arg_count: usize,
         program: &Program,
         ctx: Ctx<'_>,
@@ -108,12 +107,9 @@ impl ProcessState {
         let arg_start = self.values.len() - arg_count;
         let args = &self.values[arg_start..];
 
-        let function_name =
-            program.string_table.get(function_id).ok_or_else(|| {
-                Fault::UnknownString {
-                    string_id: function_id,
-                }
-            })?;
+        let function_name = function
+            .lookup(&program.string_table)
+            .ok_or_else(|| Fault::UnknownString { string: function })?;
 
         slog::debug!(ctx.logger, "Calling a builtin function";
             "name" => function_name,
@@ -121,7 +117,7 @@ impl ProcessState {
 
         let result = ctx.machine.call(function_name, args).map_err(|e| {
             Fault::CallFailed {
-                function_name: function_id,
+                function_name: function,
                 inner: e,
             }
         })?;
@@ -135,15 +131,14 @@ impl ProcessState {
 
     fn on_goto(
         &mut self,
-        label_id: LabelIndex,
+        label: LabelIndex,
         current_function: &Function,
     ) -> Result<(), Fault> {
         let mut sf = self.stack_frame_mut().expect("unreachable");
-        sf.ip = current_function
-            .labels
-            .get(label_id)
+        sf.ip = label
+            .lookup(&current_function.labels)
             .copied()
-            .ok_or_else(|| Fault::UnknownLabel(label_id))?;
+            .ok_or_else(|| Fault::UnknownLabel(label))?;
 
         Ok(())
     }
@@ -165,14 +160,14 @@ impl ProcessState {
             None => return Err(Fault::PoppedFromEmptyStack),
         };
 
-        let label_id = if condition { true_label } else { false_label };
+        let label = if condition { true_label } else { false_label };
 
-        self.on_goto(label_id, current_function)
+        self.on_goto(label, current_function)
     }
 
     fn on_store_global(
         &mut self,
-        string_id: StringIndex,
+        string: StringIndex,
         strings: &[String],
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
@@ -181,9 +176,9 @@ impl ProcessState {
             .pop()
             .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
 
-        let variable_name = strings
-            .get(string_id)
-            .ok_or_else(|| Fault::UnknownString { string_id })?;
+        let variable_name = string
+            .lookup(&strings)
+            .ok_or_else(|| Fault::UnknownString { string })?;
 
         ctx.machine.store_global(variable_name, value);
 
@@ -192,13 +187,13 @@ impl ProcessState {
 
     fn on_load_global(
         &mut self,
-        string_id: StringIndex,
+        string: StringIndex,
         strings: &[String],
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
-        let variable_name = strings
-            .get(string_id)
-            .ok_or_else(|| Fault::UnknownString { string_id })?;
+        let variable_name = string
+            .lookup(&strings)
+            .ok_or_else(|| Fault::UnknownString { string })?;
 
         let value = ctx
             .machine
@@ -218,12 +213,12 @@ impl ProcessState {
 
     fn on_call_user_func(
         &mut self,
-        function_id: FunctionID,
+        function: FunctionID,
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
-        self.stack.push(StackFrame { function_id, ip: 0 });
+        self.stack.push(StackFrame { function, ip: 0 });
         slog::trace!(ctx.logger, "Calling a user function";
-                    "function-id" => function_id,
+                    "function-id" => function,
                     "new-stack-depth" => self.stack.len());
 
         // TODO: Do we want to check for infinite recursion?
@@ -258,12 +253,11 @@ impl ProcessState {
         &self,
         program: &'a Program,
     ) -> Result<&'a Function, Fault> {
-        let StackFrame { function_id, .. } = self.stack_frame()?;
+        let StackFrame { function, .. } = self.stack_frame()?;
 
-        program
-            .functions
-            .get(function_id)
-            .ok_or_else(|| Fault::UnknownFunction(function_id))
+        function
+            .lookup(&program.functions)
+            .ok_or_else(|| Fault::UnknownFunction(function))
     }
 
     fn fetch(
@@ -271,15 +265,17 @@ impl ProcessState {
         program: &Program,
         logger: &Logger,
     ) -> Result<Instruction, Fault> {
-        let StackFrame { function_id, ip } = self.stack_frame()?;
-        let function = self.current_function(program)?;
+        let StackFrame { function, ip } = self.stack_frame()?;
 
-        let instruction = function.body.get(ip).copied().ok_or_else(|| {
-            Fault::InstructionOutOfBounds {
-                function: function_id,
+        let instruction = self
+            .current_function(program)?
+            .body
+            .get(ip)
+            .copied()
+            .ok_or_else(|| Fault::InstructionOutOfBounds {
+                function,
                 instruction: ip,
-            }
-        })?;
+            })?;
 
         slog::trace!(logger, "Decoded an instruction";
             "instruction" => format_args!("{:?}", instruction),
@@ -308,7 +304,7 @@ impl<'a> Ctx<'a> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct StackFrame {
     /// The function currently being executed.
-    pub function_id: FunctionID,
+    pub function: FunctionID,
     /// The [`Instruction`] index within the current [`Function`]'s body.
     pub ip: usize,
 }
@@ -316,10 +312,10 @@ pub struct StackFrame {
 impl slog::KV for StackFrame {
     fn serialize(
         &self,
-        _record: &slog::Record,
+        record: &slog::Record,
         ser: &mut dyn slog::Serializer,
     ) -> slog::Result {
-        ser.emit_usize("function-id", self.function_id)?;
+        slog::Value::serialize(&self.function, record, "function", ser)?;
         ser.emit_usize("ip", self.ip)?;
         Ok(())
     }
@@ -335,8 +331,8 @@ pub enum Fault {
     PoppedFromEmptyStack,
     #[error("No such function with ID {0}")]
     UnknownFunction(FunctionID),
-    #[error("No such string with ID {string_id}")]
-    UnknownString { string_id: StringIndex },
+    #[error("No such string with ID {string}")]
+    UnknownString { string: StringIndex },
     #[error("Expected a {expected} but found {found}")]
     TypeError { found: Type, expected: Type },
     #[error("No global called \"{0}\"")]
@@ -386,6 +382,8 @@ mod tests {
     use slog::{Discard, Logger};
     use std::sync::{Arc, Mutex};
 
+    /// A helper for setting up a simple [`Program`] and all the inputs
+    /// needed by [`ProcessState::step()`].
     macro_rules! ps_test {
         ($name:ident, |$machine:ident, $ctx:ident, $program:ident, mut $state:ident| $body:block) => {
             #[test]
@@ -394,7 +392,7 @@ mod tests {
                 let $machine = Arc::new(BasicMachine::default());
                 let mut $state = ProcessState::default();
                 $state.stack.push(StackFrame {
-                    function_id: 0,
+                    function: FunctionID(0),
                     ip: 0,
                 });
 
@@ -431,7 +429,7 @@ mod tests {
         return_from_penultimate_stack_frame,
         |_mac, ctx, p, mut state| {
             state.stack.push(StackFrame {
-                function_id: 0,
+                function: FunctionID(0),
                 ip: 0,
             });
 
@@ -443,7 +441,9 @@ mod tests {
     );
 
     ps_test!(call_user_function_no_args, |_mac, ctx, p, mut state| {
-        let instr = Instruction::CallUserFunction { function_id: 42 };
+        let instr = Instruction::CallUserFunction {
+            function: FunctionID(42),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(
             state.stack.last().unwrap(),
             &StackFrame {
-                function_id: 42,
+                function: FunctionID(42),
                 ip: 1
             }
         );
@@ -489,7 +489,9 @@ mod tests {
     });
 
     ps_test!(push_string_from_string_pool, |_mac, ctx, p, mut state| {
-        let instr = Instruction::PushString { string_id: 0 };
+        let instr = Instruction::PushString {
+            string: StringIndex(0),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
@@ -499,19 +501,25 @@ mod tests {
     });
 
     ps_test!(push_unknown_string, |_mac, ctx, p, mut state| {
-        let instr = Instruction::PushString { string_id: 42 };
+        let instr = Instruction::PushString {
+            string: StringIndex(42),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(
             cont,
-            Continuation::Fault(Fault::UnknownString { string_id: 42 })
+            Continuation::Fault(Fault::UnknownString {
+                string: StringIndex(42)
+            })
         );
     });
 
     ps_test!(get_global_variable, |mac, ctx, p, mut state| {
         mac.store_global(&p.string_table[1], Value::Integer(42));
-        let instr = Instruction::LoadGlobal { variable_id: 1 };
+        let instr = Instruction::LoadGlobal {
+            variable: StringIndex(1),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
@@ -523,7 +531,9 @@ mod tests {
     ps_test!(set_global_variable, |mac, ctx, p, mut state| {
         let value = Value::Integer(42);
         state.values.push(value.clone());
-        let instr = Instruction::StoreGlobal { variable_id: 1 };
+        let instr = Instruction::StoreGlobal {
+            variable: StringIndex(1),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
@@ -550,8 +560,8 @@ mod tests {
 
     ps_test!(if_with_empty_stack_is_error, |mac, ctx, p, mut state| {
         let instr = Instruction::Branch {
-            true_label: 0,
-            false_label: 0,
+            true_label: LabelIndex(0),
+            false_label: LabelIndex(0),
         };
 
         let cont = state.execute(instr, &p, ctx);
@@ -561,8 +571,8 @@ mod tests {
 
     ps_test!(if_with_non_boolean_is_error, |mac, ctx, p, mut state| {
         let instr = Instruction::Branch {
-            true_label: 0,
-            false_label: 0,
+            true_label: LabelIndex(0),
+            false_label: LabelIndex(0),
         };
         state.values.push(Value::Integer(42));
 
@@ -579,8 +589,8 @@ mod tests {
 
     ps_test!(take_true_branch, |mac, ctx, p, mut state| {
         let instr = Instruction::Branch {
-            true_label: 1,
-            false_label: 42,
+            true_label: LabelIndex(1),
+            false_label: LabelIndex(42),
         };
         state.values.push(Value::Boolean(true));
 
@@ -588,14 +598,14 @@ mod tests {
 
         assert_eq!(cont, Continuation::Continue);
         let sf = state.stack_frame().unwrap();
-        let func = &p.functions[sf.function_id];
+        let func = &p.functions[sf.function];
         assert_eq!(sf.ip, func.labels[1]);
     });
 
     ps_test!(take_false_branch, |mac, ctx, p, mut state| {
         let instr = Instruction::Branch {
-            true_label: 1,
-            false_label: 2,
+            true_label: LabelIndex(1),
+            false_label: LabelIndex(2),
         };
         state.values.push(Value::Boolean(false));
 
@@ -603,27 +613,34 @@ mod tests {
 
         assert_eq!(cont, Continuation::Continue);
         let sf = state.stack_frame().unwrap();
-        let func = &p.functions[sf.function_id];
+        let func = &p.functions[sf.function];
         assert_eq!(sf.ip, func.labels[2]);
     });
 
     ps_test!(goto_valid_label, |mac, ctx, p, mut state| {
-        let instr = Instruction::Goto { label: 2 };
+        let instr = Instruction::Goto {
+            label: LabelIndex(2),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
         assert_eq!(cont, Continuation::Continue);
         let sf = state.stack_frame().unwrap();
-        let func = &p.functions[sf.function_id];
+        let func = &p.functions[sf.function];
         assert_eq!(sf.ip, func.labels[2]);
     });
 
     ps_test!(goto_invalid_label, |mac, ctx, p, mut state| {
-        let instr = Instruction::Goto { label: 42 };
+        let instr = Instruction::Goto {
+            label: LabelIndex(42),
+        };
 
         let cont = state.execute(instr, &p, ctx);
 
-        assert_eq!(cont, Continuation::Fault(Fault::UnknownLabel(42)));
+        assert_eq!(
+            cont,
+            Continuation::Fault(Fault::UnknownLabel(LabelIndex(42)))
+        );
     });
 
     ps_test!(
@@ -636,7 +653,7 @@ mod tests {
                 Ok(Some(expected_2.clone()))
             });
             let instr = Instruction::CallBuiltinFunction {
-                function_id: 2,
+                function: StringIndex(2),
                 args: 0,
             };
 
@@ -652,7 +669,7 @@ mod tests {
         call_a_builtin_function_with_insufficient_args,
         |mac, ctx, p, mut state| {
             let instr = Instruction::CallBuiltinFunction {
-                function_id: 2,
+                function: StringIndex(2),
                 args: 3,
             };
 
@@ -664,7 +681,7 @@ mod tests {
 
     ps_test!(call_unknown_function, |mac, ctx, p, mut state| {
         let instr = Instruction::CallBuiltinFunction {
-            function_id: 1,
+            function: StringIndex(1),
             args: 0,
         };
 
@@ -673,7 +690,7 @@ mod tests {
         assert_eq!(
             cont,
             Continuation::Fault(Fault::CallFailed {
-                function_name: 1,
+                function_name: StringIndex(1),
                 inner: CallFailed::UnknownFunction,
             })
         );
@@ -685,7 +702,7 @@ mod tests {
             let err = CallFailed::Custom("Oops...");
             mac.register_function("some_function", move |_| Err(err));
             let instr = Instruction::CallBuiltinFunction {
-                function_id: 2,
+                function: StringIndex(2),
                 args: 0,
             };
 
@@ -694,7 +711,7 @@ mod tests {
             assert_eq!(
                 cont,
                 Continuation::Fault(Fault::CallFailed {
-                    function_name: 2,
+                    function_name: StringIndex(2),
                     inner: err,
                 })
             );
@@ -711,7 +728,7 @@ mod tests {
                 Ok(None)
             });
             let instr = Instruction::CallBuiltinFunction {
-                function_id: 2,
+                function: StringIndex(2),
                 args: 3,
             };
             let expected = vec![

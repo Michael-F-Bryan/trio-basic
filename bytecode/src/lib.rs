@@ -1,5 +1,6 @@
 //! Internal bytecode representation.
 
+use slog::{self, Serializer, Value};
 use std::fmt::{self, Debug, Display, Formatter};
 
 /// A fully compiled bytecode program.
@@ -12,21 +13,17 @@ pub struct Program {
     pub functions: Vec<Function>,
 }
 
-pub type StringIndex = usize;
-pub type LabelIndex = usize;
-pub type FunctionID = usize;
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Instruction {
     /// Call a user-defined function.
     CallUserFunction {
         /// Which function to call.
-        function_id: FunctionID,
+        function: FunctionID,
     },
     /// Call a builtin function.
     CallBuiltinFunction {
-        /// Which function to call.
-        function_id: FunctionID,
+        /// The name of the function to call.
+        function: StringIndex,
         /// The number of arguments to pass to the function.
         args: usize,
     },
@@ -39,14 +36,14 @@ pub enum Instruction {
     /// Push a [`bool`] onto the top of the stack.
     PushBoolean(bool),
     /// Push a string from the string table to the top of the stack.
-    PushString { string_id: StringIndex },
+    PushString { string: StringIndex },
     /// Copy the value from a global variable onto the stack.
     LoadGlobal {
         /// An index into the string table with the variable's name.
-        variable_id: StringIndex,
+        variable: StringIndex,
     },
     /// Pop a value from the top of the stack and save it in a global variable.
-    StoreGlobal { variable_id: StringIndex },
+    StoreGlobal { variable: StringIndex },
     /// Pop an item off the top of the stack.
     Pop,
     /// Pop an item from the stack, goto to the `true_label` if it is `true`,
@@ -81,3 +78,47 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { Debug::fmt(self, f) }
 }
+
+macro_rules! newtype_index {
+    ($name:ident -> $slice:ty) => {
+        #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+        pub struct $name(pub usize);
+
+        impl $name {
+            pub fn lookup(self, target: &[$slice]) -> Option<&$slice> {
+                target.get(self.0)
+            }
+        }
+
+        impl Display for $name {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                Debug::fmt(self, f)
+            }
+        }
+
+        impl Value for $name {
+            fn serialize(
+                &self,
+                _record: &slog::Record,
+                key: &'static str,
+                ser: &mut dyn Serializer,
+            ) -> slog::Result {
+                ser.emit_usize(key, self.0)
+            }
+        }
+
+        impl From<usize> for $name {
+            fn from(other: usize) -> $name { $name(other) }
+        }
+
+        impl std::ops::Index<$name> for Vec<$slice> {
+            type Output = $slice;
+
+            fn index(&self, ix: $name) -> &Self::Output { self.index(ix.0) }
+        }
+    };
+}
+
+newtype_index!(StringIndex -> String);
+newtype_index!(LabelIndex -> usize);
+newtype_index!(FunctionID -> Function);
