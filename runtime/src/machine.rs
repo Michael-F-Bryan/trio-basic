@@ -8,11 +8,22 @@ use std::{collections::HashMap, sync::Mutex};
 pub trait Machine {
     fn load_global(&self, name: &str) -> Option<Value>;
     fn store_global(&self, name: &str, value: Value);
+    fn call(
+        &self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, CallFailed>;
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct BasicMachine {
     pub globals: Mutex<HashMap<String, Value>>,
+    pub functions: Mutex<
+        HashMap<
+            String,
+            Box<dyn Fn(&[Value]) -> Result<Option<Value>, CallFailed>>,
+        >,
+    >,
 }
 
 impl Machine for BasicMachine {
@@ -23,4 +34,22 @@ impl Machine for BasicMachine {
     fn store_global(&self, name: &str, value: Value) {
         self.globals.lock().unwrap().insert(name.to_string(), value);
     }
+
+    fn call(
+        &self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, CallFailed> {
+        let functions = self.functions.lock().unwrap();
+        let function =
+            functions.get(name).ok_or(CallFailed::UnknownFunction)?;
+
+        (function)(args)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, thiserror::Error)]
+pub enum CallFailed {
+    #[error("Unknown function")]
+    UnknownFunction,
 }

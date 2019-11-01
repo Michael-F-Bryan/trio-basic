@@ -1,4 +1,4 @@
-use crate::{Machine, Process, Value};
+use crate::{CallFailed, Machine, Process, Value};
 #[allow(unused_imports)]
 use bytecode::Function;
 use bytecode::{
@@ -66,7 +66,9 @@ impl ProcessState {
                 self.on_store_global(variable_id, &program.string_table, ctx)?;
             },
             Instruction::Pop => {
-                self.values.pop().ok_or_else(|| Fault::EmptyStack)?;
+                self.values
+                    .pop()
+                    .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
             },
             Instruction::Branch {
                 true_label,
@@ -83,12 +85,52 @@ impl ProcessState {
                 self.on_goto(label, self.current_function(program)?)?;
                 return Continuation::Continue;
             },
-
-            _ => unimplemented!("We can't yet handle {:?}", instruction),
+            Instruction::CallBuiltinFunction { function_id, args } => {
+                self.on_call_builtin(function_id, args, program, ctx)?
+            },
         }
 
         self.advance_ip();
         Continuation::Continue
+    }
+
+    fn on_call_builtin(
+        &mut self,
+        function_id: StringIndex,
+        arg_count: usize,
+        program: &Program,
+        ctx: Ctx<'_>,
+    ) -> Result<(), Fault> {
+        if self.values.len() < arg_count {
+            return Err(Fault::PoppedFromEmptyStack);
+        }
+
+        let arg_start = self.values.len() - arg_count;
+        let args = &self.values[arg_start..];
+
+        let function_name =
+            program.string_table.get(function_id).ok_or_else(|| {
+                Fault::UnknownString {
+                    string_id: function_id,
+                }
+            })?;
+
+        slog::debug!(ctx.logger, "Calling a builtin function";
+            "name" => function_name,
+            "args" => format_args!("{:?}", args));
+
+        let result = ctx.machine.call(function_name, args).map_err(|e| {
+            Fault::CallFailed {
+                function_name: function_id,
+                inner: e,
+            }
+        })?;
+
+        if let Some(return_value) = result {
+            self.values.push(return_value);
+        }
+
+        Ok(())
     }
 
     fn on_goto(
@@ -191,7 +233,7 @@ impl ProcessState {
     fn on_return(&mut self) -> Continuation {
         if self.stack.is_empty() {
             // returned when haven't got a stack frame
-            return Continuation::Fault(Fault::EmptyStack);
+            return Continuation::Fault(Fault::EmptyCallStack);
         }
 
         self.stack.pop();
@@ -205,11 +247,11 @@ impl ProcessState {
     }
 
     fn stack_frame(&self) -> Result<StackFrame, Fault> {
-        self.stack.last().copied().ok_or(Fault::EmptyStack)
+        self.stack.last().copied().ok_or(Fault::EmptyCallStack)
     }
 
     fn stack_frame_mut(&mut self) -> Result<&mut StackFrame, Fault> {
-        self.stack.last_mut().ok_or(Fault::EmptyStack)
+        self.stack.last_mut().ok_or(Fault::EmptyCallStack)
     }
 
     fn current_function<'a>(
@@ -288,7 +330,7 @@ pub enum Fault {
     #[error("No such label with index {0}")]
     UnknownLabel(LabelIndex),
     #[error("Trying to execute an instruction when there are no stack frames")]
-    EmptyStack,
+    EmptyCallStack,
     #[error("Tried to pop a value when nothing is on the stack")]
     PoppedFromEmptyStack,
     #[error("No such function with ID {0}")]
@@ -303,6 +345,12 @@ pub enum Fault {
     InstructionOutOfBounds {
         function: FunctionID,
         instruction: usize,
+    },
+    #[error("Calling a builtin function failed")]
+    CallFailed {
+        function_name: StringIndex,
+        #[source]
+        inner: CallFailed,
     },
 }
 
@@ -497,7 +545,7 @@ mod tests {
     ps_test!(pop_from_empty_stack_is_error, |mac, ctx, p, mut state| {
         let cont = state.execute(Instruction::Pop, &p, ctx);
 
-        assert_eq!(cont, Continuation::Fault(Fault::EmptyStack));
+        assert_eq!(cont, Continuation::Fault(Fault::PoppedFromEmptyStack));
     });
 
     ps_test!(if_with_empty_stack_is_error, |mac, ctx, p, mut state| {
