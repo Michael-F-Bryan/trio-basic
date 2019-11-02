@@ -206,8 +206,8 @@ impl_ast_node!(Statement; ;args);
 mod tests {
     use super::*;
     use codespan::ByteIndex;
-    use grammar::{ExprParser, FileParser, LineParser};
-    use tokens::{self, Spanned, Token};
+    use crate::grammar::{ExprParser, FileParser, LineParser};
+    use crate::tokens::{self, Spanned, Token};
 
     macro_rules! tokens {
         ($( $token:expr ),*) => {{

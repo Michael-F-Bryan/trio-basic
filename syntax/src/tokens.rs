@@ -1,5 +1,5 @@
 use codespan::ByteIndex;
-use lexer::{LexError, Lexer};
+use crate::lexer::{LexError, Lexer};
 use std::fmt::{self, Display, Formatter};
 
 pub type Spanned<'input> = Result<(ByteIndex, Token<'input>, ByteIndex), LexError>;

@@ -1,8 +1,8 @@
 use codespan::{ByteIndex, ByteOffset, Span};
 use lalrpop_util::ParseError as LpError;
-use lexer::LexError;
+use crate::lexer::LexError;
 use std::fmt::{self, Display, Formatter};
-use tokens::Token;
+use crate::tokens::Token;
 
 #[derive(Debug, Clone, PartialEq, Fail)]
 pub enum ParseError {

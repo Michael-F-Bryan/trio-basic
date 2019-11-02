@@ -4,6 +4,7 @@ build = "build.rs"
 description = "Lexical and Syntactic analysis of TRIO Basic programs"
 name = "syntax"
 version = "0.1.0"
+edition = "2018"
 
 [build-dependencies]
 lalrpop = "0.17"

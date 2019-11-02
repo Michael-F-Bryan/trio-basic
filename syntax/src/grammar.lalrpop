@@ -1,8 +1,12 @@
 use codespan::{ByteIndex, Span};
-use lexer::LexError;
-use ast::{Ident, Literal, FunctionCall, Expr, Label, Line, Assignment, Dim, File, 
-          BinaryOp, Operator, Statement};
-use tokens::Token;
+use crate::{
+    lexer::LexError,
+    ast::{
+        Ident, Literal, FunctionCall, Expr, Label, Line, Assignment, Dim, File, 
+        BinaryOp, Operator, Statement,
+    },
+    tokens::Token,
+};
 
 grammar<'input>;
 

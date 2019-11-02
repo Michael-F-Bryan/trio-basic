@@ -26,11 +26,11 @@ mod errors;
 pub mod lexer;
 pub mod tokens;
 
-pub use errors::ParseError;
+pub use crate::errors::ParseError;
 
 lalrpop_mod!(pub grammar);
 
-use ast::File;
+use crate::ast::File;
 
 /// Parse a raw source string into its AST representation.
 ///
