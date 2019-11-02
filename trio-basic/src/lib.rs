@@ -1,14 +1,14 @@
 //! The TRIO Basic Compiler.
 
+pub mod diagnostics;
 pub mod parse;
 mod session;
 
+pub use diagnostics::DiagnosticReporter;
 pub use session::Session;
 
 use codespan::{FileId, Files};
-use codespan_reporting::diagnostic::Diagnostic;
 use slog::Logger;
-use syntax::ParseError;
 
 /// The entrypoint to the compiler.
 pub fn compile<C, D>(
@@ -47,9 +47,4 @@ pub trait Callback {
 pub enum Compilation {
     Continue,
     Halt,
-}
-
-pub trait DiagnosticReporter {
-    fn on_parse_error(&self, _error: &ParseError, _file: FileId) {}
-    fn on_diagnostic(&self, _diag: Diagnostic, _file: FileId) {}
 }

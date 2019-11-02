@@ -61,38 +61,59 @@ pub struct Ast {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codespan_reporting::diagnostic::Diagnostic;
+    use crate::diagnostics::{PanicReporter, Recorder};
     use slog::Discard;
-    use syntax::ParseError;
 
-    struct PanicReporter;
+    macro_rules! system_test {
+        ($name:ident, $($filename:expr => $src:expr),*;
+            |$world:ident, $files:ident, $logger:ident| $body:block) => {
+            #[test]
+            fn $name() {
+                let $logger = Logger::root(Discard, slog::o!());
+                let mut source_code = Files::new();
 
-    impl DiagnosticReporter for PanicReporter {
-        fn on_parse_error(&self, error: &ParseError, _file: FileId) {
-            panic!("{}", error);
-        }
+                let mut $files = Vec::<FileId>::new();
+                $(
+                    let file_id = source_code.add($filename, $src);
+                    $files.push(file_id);
+                )*
 
-        fn on_diagnostic(&self, diag: Diagnostic, _file: FileId) {
-            panic!("{:?}", diag);
+                let mut $world = World::new();
+                $world.insert(source_code);
+
+                $body;
+            }
+        };
+    }
+
+    system_test! {
+        run_the_parse_system, "main" => "DIM x AS INTEGER";
+        |world, files, logger| {
+            let mut sys = Parse::new(&files, &PanicReporter, logger.clone());
+            RunNow::setup(&mut sys, &mut world);
+
+            sys.run_now(&mut world);
+
+            let ast_nodes: ReadStorage<Ast> = world.system_data();
+            assert_eq!(ast_nodes.count(), 1);
+            let got = ast_nodes.join().next().unwrap();
+            assert_eq!(got.file, files[0]);
         }
     }
 
-    #[test]
-    fn run_the_parse_system() {
-        let logger = Logger::root(Discard, slog::o!());
-        let mut files = Files::new();
-        let file = files.add("main", "DIM x AS INTEGER");
-        let mut world = World::new();
-        world.insert(files);
-        let files = &[file];
-        let mut sys = Parse::new(files, &PanicReporter, logger.clone());
-        RunNow::setup(&mut sys, &mut world);
+    system_test! {
+        detect_parse_failure, "main" => "DIM x";
+        |world, files, logger| {
+            let diags = Recorder::default();
+            let mut sys = Parse::new(&files, &diags, logger.clone());
+            RunNow::setup(&mut sys, &mut world);
 
-        sys.run_now(&mut world);
+            sys.run_now(&mut world);
 
-        let ast_nodes: ReadStorage<Ast> = world.system_data();
-        assert_eq!(ast_nodes.count(), 1);
-        let got = ast_nodes.join().next().unwrap();
-        assert_eq!(got.file, file);
+            assert!(diags.diagnostics.lock().unwrap().is_empty());
+            let parse_errors = diags.parse_errors.lock().unwrap();
+            assert_eq!(parse_errors.len(), 1);
+            assert_eq!(parse_errors[0].0, files[0]);
+        }
     }
 }
