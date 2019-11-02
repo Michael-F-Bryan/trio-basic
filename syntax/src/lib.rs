@@ -1,23 +1,11 @@
 //! The frontend code in charge of turning a stream of characters into a full
 //! Abstract Syntax Tree.
 
-extern crate heapsize;
-#[macro_use]
-extern crate heapsize_derive;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate codespan;
-extern crate failure;
-#[macro_use]
-extern crate lalrpop_util;
-extern crate regex;
-#[macro_use]
-extern crate failure_derive;
-
 #[cfg(test)]
 #[macro_use]
 extern crate pretty_assertions;
+#[macro_use]
+extern crate lalrpop_util;
 
 #[macro_use]
 mod macros;
@@ -28,7 +16,7 @@ pub mod tokens;
 
 pub use crate::errors::ParseError;
 
-lalrpop_mod!(pub grammar);
+lalrpop_mod!(pub(crate) grammar);
 
 use crate::ast::File;
 

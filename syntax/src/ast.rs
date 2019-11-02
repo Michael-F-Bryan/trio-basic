@@ -2,6 +2,8 @@
 
 use codespan::Span;
 use heapsize::HeapSizeOf;
+use heapsize_derive::HeapSizeOf;
+use serde_derive::{Deserialize, Serialize};
 
 pub trait AstNode {
     fn span(&self) -> Span;
@@ -205,9 +207,11 @@ impl_ast_node!(Statement; ;args);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        grammar::{ExprParser, FileParser, LineParser},
+        tokens::{self, Spanned, Token},
+    };
     use codespan::ByteIndex;
-    use crate::grammar::{ExprParser, FileParser, LineParser};
-    use crate::tokens::{self, Spanned, Token};
 
     macro_rules! tokens {
         ($( $token:expr ),*) => {{

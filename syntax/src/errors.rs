@@ -1,10 +1,12 @@
+use crate::{lexer::LexError, tokens::Token};
 use codespan::{ByteIndex, ByteOffset, Span};
 use lalrpop_util::ParseError as LpError;
-use crate::lexer::LexError;
-use std::fmt::{self, Display, Formatter};
-use crate::tokens::Token;
+use std::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+};
 
-#[derive(Debug, Clone, PartialEq, Fail)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ParseError {
     InvalidToken {
         location: ByteIndex,
@@ -117,3 +119,5 @@ impl Display for ParseError {
         }
     }
 }
+
+impl Error for ParseError {}

@@ -1,8 +1,10 @@
-use codespan::ByteIndex;
 use crate::lexer::{LexError, Lexer};
+use codespan::ByteIndex;
+use serde_derive::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
-pub type Spanned<'input> = Result<(ByteIndex, Token<'input>, ByteIndex), LexError>;
+pub type Spanned<'input> =
+    Result<(ByteIndex, Token<'input>, ByteIndex), LexError>;
 
 pub fn construct_lexer(src: &str) -> impl Iterator<Item = Spanned> {
     let mut lexer = Lexer::new(src).skipping(r"^[\t\v \r]+|(?m)^'.*$");
@@ -99,21 +101,15 @@ impl<'input> Token<'input> {
 }
 
 impl<'input> From<&'input str> for Token<'input> {
-    fn from(other: &'input str) -> Token<'input> {
-        Token::Identifier(other)
-    }
+    fn from(other: &'input str) -> Token<'input> { Token::Identifier(other) }
 }
 
 impl<'input> From<f64> for Token<'input> {
-    fn from(other: f64) -> Token<'input> {
-        Token::Float(other)
-    }
+    fn from(other: f64) -> Token<'input> { Token::Float(other) }
 }
 
 impl<'input> From<i64> for Token<'input> {
-    fn from(other: i64) -> Token<'input> {
-        Token::Integer(other)
-    }
+    fn from(other: i64) -> Token<'input> { Token::Integer(other) }
 }
 
 impl<'input> Display for Token<'input> {

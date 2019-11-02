@@ -35,7 +35,7 @@ macro_rules! enum_decl {
         }
     };
     ($( #[$attr:meta]  )* $name:ident => $( $variant:ident ($type:ty), )*) => {
-        #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, HeapSizeOf)]
+        #[derive(Debug, Clone, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
         #[serde(rename_all = "kebab-case")]
         $(
             #[$attr]
