@@ -1,2 +1,5 @@
 [workspace]
-members = ["bytecode", "runtime"]
+members = ["bytecode", "runtime", "syntax"]
+
+[patch.crates-io]
+lalrpop-util = { git = "https://github.com/Michael-F-Bryan/lalrpop.git", branch = "module-visiblity" }
