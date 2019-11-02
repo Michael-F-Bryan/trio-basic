@@ -1,8 +1,11 @@
-use crate::{CallFailed, Machine, Process, Value};
+#[allow(unused_imports)]
+use crate::Process;
+use crate::{CallFailed, Machine, Value};
 #[allow(unused_imports)]
 use bytecode::Function;
 use bytecode::{
-    FunctionID, Instruction, LabelIndex, Program, SliceExt, StringIndex, Type,
+    FunctionIndex, Instruction, LabelIndex, Program, SliceExt, StringIndex,
+    Type,
 };
 use slog::Logger;
 use std::ops::Try;
@@ -12,21 +15,19 @@ use std::ops::Try;
 /// You're probably here for [`ProcessState::step()`].
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ProcessState {
-    stack: Vec<StackFrame>,
-    values: Vec<Value>,
+    pub stack: Vec<StackFrame>,
+    pub values: Vec<Value>,
 }
 
 impl ProcessState {
     pub fn empty() -> Self { ProcessState::default() }
 
-    pub fn at_function_entry(function: FunctionID) -> Self {
+    pub fn at_function_entry(function: FunctionIndex) -> Self {
         ProcessState {
             stack: vec![StackFrame { function, ip: 0 }],
             values: Vec::new(),
         }
     }
-
-    pub fn stack(&self) -> &[StackFrame] { &self.stack }
 
     pub fn step(&mut self, program: &Program, ctx: Ctx<'_>) -> Continuation {
         let instruction = self.fetch(program, ctx.logger)?;
@@ -66,9 +67,7 @@ impl ProcessState {
                 self.on_store_global(variable, &program.string_table, ctx)?;
             },
             Instruction::Pop => {
-                self.values
-                    .pop()
-                    .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
+                self.pop()?;
             },
             Instruction::Branch {
                 true_label,
@@ -88,10 +87,39 @@ impl ProcessState {
             Instruction::CallBuiltinFunction { function, args } => {
                 self.on_call_builtin(function, args, program, ctx)?
             },
+            Instruction::Add => {
+                self.on_add()?;
+            },
         }
 
         self.advance_ip();
         Continuation::Continue
+    }
+
+    fn on_add(&mut self) -> Result<(), Fault> {
+        let second = self.pop()?;
+        let first = self.pop()?;
+
+        match (first, second) {
+            (Value::Integer(l), Value::Integer(r)) => {
+                self.values.push(Value::Integer(l + r))
+            },
+            (Value::Double(l), Value::Double(r)) => {
+                self.values.push(Value::Double(l + r))
+            },
+            (l, _) => {
+                return Err(Fault::TypeError {
+                    found: l.ty(),
+                    expected: Type::Integer,
+                })
+            },
+        }
+
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<Value, Fault> {
+        self.values.pop().ok_or_else(|| Fault::PoppedFromEmptyStack)
     }
 
     fn on_call_builtin(
@@ -152,15 +180,14 @@ impl ProcessState {
         false_label: LabelIndex,
         current_function: &Function,
     ) -> Result<(), Fault> {
-        let condition = match self.values.pop() {
-            Some(Value::Boolean(cond)) => cond,
-            Some(other) => {
+        let condition = match self.pop()? {
+            Value::Boolean(cond) => cond,
+            other => {
                 return Err(Fault::TypeError {
                     found: other.ty(),
                     expected: Type::Boolean,
                 })
             },
-            None => return Err(Fault::PoppedFromEmptyStack),
         };
 
         let label = if condition { true_label } else { false_label };
@@ -174,10 +201,7 @@ impl ProcessState {
         strings: &[String],
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
-        let value = self
-            .values
-            .pop()
-            .ok_or_else(|| Fault::PoppedFromEmptyStack)?;
+        let value = self.pop()?;
 
         let variable_name = strings
             .get_(string)
@@ -216,13 +240,21 @@ impl ProcessState {
 
     fn on_call_user_func(
         &mut self,
-        function: FunctionID,
+        function: FunctionIndex,
         ctx: Ctx<'_>,
     ) -> Result<(), Fault> {
-        self.stack.push(StackFrame { function, ip: 0 });
+        self.call_user_func(function)?;
         slog::trace!(ctx.logger, "Calling a user function";
                     "function-id" => function,
                     "new-stack-depth" => self.stack.len());
+        Ok(())
+    }
+
+    pub fn call_user_func(
+        &mut self,
+        function: FunctionIndex,
+    ) -> Result<(), Fault> {
+        self.stack.push(StackFrame { function, ip: 0 });
 
         // TODO: Do we want to check for infinite recursion?
         Ok(())
@@ -299,16 +331,12 @@ impl<'a> Ctx<'a> {
     pub(crate) fn new(logger: &'a Logger, machine: &'a dyn Machine) -> Self {
         Ctx { logger, machine }
     }
-
-    pub fn for_process(process: &'a Process) -> Self {
-        Ctx::new(&process.logger, &*process.machine)
-    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct StackFrame {
     /// The function currently being executed.
-    pub function: FunctionID,
+    pub function: FunctionIndex,
     /// The [`Instruction`] index within the current [`Function`]'s body.
     pub ip: usize,
 }
@@ -334,7 +362,7 @@ pub enum Fault {
     #[error("Tried to pop a value when nothing is on the stack")]
     PoppedFromEmptyStack,
     #[error("No such function with ID {0}")]
-    UnknownFunction(FunctionID),
+    UnknownFunction(FunctionIndex),
     #[error("No such string with ID {string}")]
     UnknownString { string: StringIndex },
     #[error("Expected a {expected} but found {found}")]
@@ -343,7 +371,7 @@ pub enum Fault {
     UnknownGlobal(String),
     #[error("Instruction out of bounds for function {function}")]
     InstructionOutOfBounds {
-        function: FunctionID,
+        function: FunctionIndex,
         instruction: usize,
     },
     #[error("Calling a builtin function failed")]
@@ -396,7 +424,7 @@ mod tests {
                 let $machine = Arc::new(BasicMachine::default());
                 let mut $state = ProcessState::default();
                 $state.stack.push(StackFrame {
-                    function: FunctionID(0),
+                    function: FunctionIndex(0),
                     ip: 0,
                 });
 
@@ -433,7 +461,7 @@ mod tests {
         return_from_penultimate_stack_frame,
         |_mac, ctx, p, mut state| {
             state.stack.push(StackFrame {
-                function: FunctionID(0),
+                function: FunctionIndex(0),
                 ip: 0,
             });
 
@@ -446,7 +474,7 @@ mod tests {
 
     ps_test!(call_user_function_no_args, |_mac, ctx, p, mut state| {
         let instr = Instruction::CallUserFunction {
-            function: FunctionID(42),
+            function: FunctionIndex(42),
         };
 
         let cont = state.execute(instr, &p, ctx);
@@ -456,7 +484,7 @@ mod tests {
         assert_eq!(
             state.stack.last().unwrap(),
             &StackFrame {
-                function: FunctionID(42),
+                function: FunctionIndex(42),
                 ip: 1
             }
         );

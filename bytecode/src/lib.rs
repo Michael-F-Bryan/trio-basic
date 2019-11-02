@@ -16,7 +16,7 @@ pub struct Program {
     /// Statically-allocated strings.
     pub string_table: Vec<String>,
     /// The program's entrypoint (i.e. `main()`).
-    pub entrypoint: FunctionID,
+    pub entrypoint: FunctionIndex,
     /// All user-defined functions "linked" into this [`Program`].
     pub functions: Vec<Function>,
 }
@@ -27,7 +27,7 @@ pub enum Instruction {
     /// Call a user-defined function.
     CallUserFunction {
         /// Which function to call.
-        function: FunctionID,
+        function: FunctionIndex,
     },
     /// Call a builtin function.
     CallBuiltinFunction {
@@ -74,10 +74,15 @@ pub enum Instruction {
     },
     /// Return control to the calling function.
     Return,
+    /// Add two values.
+    ///
+    /// The operands must be the same type, and either [`Type::Integer`] or
+    /// [`Type::Double`]
+    Add,
 }
 
 /// A function definition.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Function {
     /// The function's name.
     pub name: String,
@@ -169,5 +174,5 @@ newtype_index! {
 }
 newtype_index! {
     /// A strongly-typed index into [`Program::functions`].
-    FunctionID -> Function
+    FunctionIndex -> Function
 }
