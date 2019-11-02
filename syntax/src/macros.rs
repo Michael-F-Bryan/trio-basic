@@ -56,34 +56,6 @@ macro_rules! enum_decl {
     };
 }
 
-/// Implement the `HeapSizeOf` trait for a struct by destructuring it and
-/// adding up the heap size of its elements.
-#[macro_export]
-macro_rules! impl_heapsize {
-    ($type:ident : $( $field:ident ),* ) => {
-        #[allow(unused_mut)]
-        impl HeapSizeOf for $type {
-            fn heap_size_of_children(&self) -> usize {
-                let $type {
-                    $( ref $field, )*
-                    span: _span,
-                } = *self;
-
-                let mut size = 0;
-
-                $(
-                    size += $field.heap_size_of_children();
-                )*
-
-                size
-            }
-        }
-    };
-    ($type:ident) => {
-        impl_heapsize!($type :);
-    };
-}
-
 macro_rules! impl_from_str {
     ($type:ty, $parser:ident) => {
         impl $type {

@@ -1,8 +1,6 @@
 //! The various types which make up a TRIO Basic program's AST.
 
 use codespan::Span;
-use heapsize::HeapSizeOf;
-use heapsize_derive::HeapSizeOf;
 use serde_derive::{Deserialize, Serialize};
 
 pub trait AstNode {
@@ -145,7 +143,7 @@ impl BinaryOp {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize, HeapSizeOf)]
+#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Operator {
     Add,
     Multiply,
@@ -171,18 +169,6 @@ impl Statement {
         }
     }
 }
-
-// codespan doesn't implement the HeapSizeOf trait, so we have to implement it
-// manually instead of using the derive.
-impl_heapsize!(Dim: name, ty);
-impl_heapsize!(Assignment: ident, value);
-impl_heapsize!(Label: name);
-impl_heapsize!(FunctionCall: name, args);
-impl_heapsize!(Literal: kind);
-impl_heapsize!(Ident: name);
-impl_heapsize!(File: lines);
-impl_heapsize!(BinaryOp: left, right, op);
-impl_heapsize!(Statement: name, args);
 
 impl_from_str!(Assignment, AssignmentParser);
 impl_from_str!(Dim, DimParser);
