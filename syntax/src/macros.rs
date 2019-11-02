@@ -17,7 +17,7 @@ macro_rules! enum_decl {
         enum_decl!{ $( #[$attr] )* $name => $( $variant($variant),)* }
 
         impl $crate::ast::AstNode for $name {
-            fn span(&self) -> ::codespan::ByteSpan {
+            fn span(&self) -> codespan::Span {
                 match *self {
                     $(
                         $name::$variant(ref item) => item.span()
@@ -25,18 +25,10 @@ macro_rules! enum_decl {
                 }
             }
 
-            fn span_mut(&mut self) -> &mut ::codespan::ByteSpan {
+            fn span_mut(&mut self) -> &mut codespan::Span {
                 match *self {
                     $(
                         $name::$variant(ref mut item) => item.span_mut()
-                    ),*
-                }
-            }
-
-            fn offset_inplace(&mut self, offset: ByteOffset) {
-                match *self {
-                    $(
-                        $name::$variant(ref mut item) => item.offset_inplace(offset)
                     ),*
                 }
             }
@@ -96,7 +88,9 @@ macro_rules! impl_from_str {
     ($type:ty, $parser:ident) => {
         impl $type {
             /// Try to parse the provided string as this type of AST node.
-            pub fn from_str(src: &str) -> ::std::result::Result<Self, $crate::ParseError> {
+            pub fn from_str(
+                src: &str,
+            ) -> ::std::result::Result<Self, $crate::ParseError> {
                 let src = $crate::tokens::construct_lexer(src);
                 $crate::grammar::$parser::new()
                     .parse(src)
@@ -114,30 +108,16 @@ macro_rules! impl_ast_node {
     ($name:ident; $( $defer:ident ),*) => {
         impl_ast_node!($name; $( $defer ),*;);
     };
-    ($name:ident; 
-    $( $defer:ident ),*; 
+    ($name:ident;
+    $( $defer:ident ),*;
     $( $loop_defer:ident ),*) => {
         impl $crate::ast::AstNode for $name {
-            fn span(&self) -> ::codespan::ByteSpan {
+            fn span(&self) -> codespan::Span {
                 self.span
             }
 
-            fn span_mut(&mut self) -> &mut ::codespan::ByteSpan {
+            fn span_mut(&mut self) -> &mut codespan::Span {
                 &mut self.span
-            }
-
-            fn offset_inplace(&mut self, offset: ::codespan::ByteOffset) {
-                self.span = self.span.map(|ix| ix + offset);
-
-                $(
-                    self.$defer.offset_inplace(offset);
-                )*
-
-                $(
-                    for item in &mut self.$loop_defer {
-                        item.offset_inplace(offset);
-                    }
-                )*
             }
         }
     };

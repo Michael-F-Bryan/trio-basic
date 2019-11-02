@@ -9,6 +9,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate codespan;
 extern crate failure;
+#[macro_use]
 extern crate lalrpop_util;
 extern crate regex;
 #[macro_use]
@@ -27,32 +28,9 @@ pub mod tokens;
 
 pub use errors::ParseError;
 
-lalrpop_util::lalrpop_mod!(pub(crate) grammar);
+lalrpop_mod!(pub grammar);
 
-use ast::{AstNode, File};
-use codespan::{ByteOffset, FileMap};
-
-/// Parse the contents of a `codespan::FileMap` and automatically update the
-/// AST's spans appropriately.
-pub fn parse_from_filemap(filemap: &FileMap) -> Result<File, ParseError> {
-    let offset = ByteOffset(filemap.span().start().0 as i64);
-
-    let mut ast = parse(filemap.src()).map_err(|mut e| {
-        e.offset_inplace(offset);
-        e
-    })?;
-
-    ast.offset_inplace(offset);
-
-    debug_assert!(
-        filemap.span().contains(ast.span()),
-        "The AST's span lies outside of the filemap ({:?} is not in {:?}). This is a bug.",
-        ast.span(),
-        filemap.span()
-    );
-
-    Ok(ast)
-}
+use ast::File;
 
 /// Parse a raw source string into its AST representation.
 ///

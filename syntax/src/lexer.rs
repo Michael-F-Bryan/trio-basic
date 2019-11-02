@@ -216,7 +216,7 @@ impl<'input, Token: 'input> Iterator for Lexer<'input, Token> {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LexError {
-    pub span: Span<ByteIndex>,
+    pub span: Span,
 }
 
 impl StdError for LexError {

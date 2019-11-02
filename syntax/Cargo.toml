@@ -6,16 +6,18 @@ name = "syntax"
 version = "0.1.0"
 
 [build-dependencies]
-lalrpop = "0.15"
+lalrpop = "0.17"
 
 [dependencies]
+heapsize = "0.4.2"
+heapsize_derive = "0.1.4"
 failure = "0.1"
 failure_derive = "0.1"
 lalrpop-util = "0.17"
 regex = "1"
 serde = "1"
 serde_derive = "1"
-codespan = "0.5"
+codespan = { version = "0.5", features = ["serialization"] }
 
 [dev-dependencies]
 pretty_assertions = "0.6"

@@ -1,37 +1,32 @@
 //! The various types which make up a TRIO Basic program's AST.
 
-use codespan::{ByteOffset, ByteSpan};
+use codespan::Span;
 use heapsize::HeapSizeOf;
 
 pub trait AstNode {
-    fn span(&self) -> ByteSpan;
-    fn span_mut(&mut self) -> &mut ByteSpan;
-    fn offset_inplace(&mut self, offset: ByteOffset) {
-        *self.span_mut() = self.span().map(|ix| ix + offset);
-    }
+    fn span(&self) -> Span;
+    fn span_mut(&mut self) -> &mut Span;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct File {
     pub lines: Vec<Line>,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl File {
-    pub fn new(lines: Vec<Line>, span: ByteSpan) -> File {
-        File { lines, span }
-    }
+    pub fn new(lines: Vec<Line>, span: Span) -> File { File { lines, span } }
 }
 
 /// A variable, type, or function name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ident {
     pub name: String,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Ident {
-    pub fn new<S: Into<String>>(name: S, span: ByteSpan) -> Ident {
+    pub fn new<S: Into<String>>(name: S, span: Span) -> Ident {
         Ident {
             name: name.into(),
             span,
@@ -42,11 +37,11 @@ impl Ident {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Literal {
     pub kind: LiteralKind,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Literal {
-    pub fn new<L: Into<LiteralKind>>(kind: L, span: ByteSpan) -> Literal {
+    pub fn new<L: Into<LiteralKind>>(kind: L, span: Span) -> Literal {
         Literal {
             kind: kind.into(),
             span,
@@ -59,11 +54,11 @@ impl Literal {
 pub struct FunctionCall {
     pub name: Ident,
     pub args: Vec<Expr>,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl FunctionCall {
-    pub fn new(name: Ident, args: Vec<Expr>, span: ByteSpan) -> FunctionCall {
+    pub fn new(name: Ident, args: Vec<Expr>, span: Span) -> FunctionCall {
         FunctionCall { name, args, span }
     }
 }
@@ -72,11 +67,11 @@ impl FunctionCall {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Label {
     pub name: String,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Label {
-    pub fn new<S: Into<String>>(name: S, span: ByteSpan) -> Label {
+    pub fn new<S: Into<String>>(name: S, span: Span) -> Label {
         let name = name.into();
         Label { name, span }
     }
@@ -87,11 +82,11 @@ impl Label {
 pub struct Assignment {
     pub ident: Ident,
     pub value: Expr,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Assignment {
-    pub fn new(ident: Ident, value: Expr, span: ByteSpan) -> Assignment {
+    pub fn new(ident: Ident, value: Expr, span: Span) -> Assignment {
         Assignment { ident, value, span }
     }
 }
@@ -100,21 +95,21 @@ impl Assignment {
 pub struct Dim {
     pub name: Ident,
     pub ty: Ident,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Dim {
-    pub fn new(name: Ident, ty: Ident, span: ByteSpan) -> Dim {
+    pub fn new(name: Ident, ty: Ident, span: Span) -> Dim {
         Dim { name, ty, span }
     }
 }
 
-enum_decl!{
+enum_decl! {
     AstNode
     /// A single line.
     Line => Label, Assignment, Dim, FunctionCall, Statement,
 }
-enum_decl!{
+enum_decl! {
     AstNode
     /// An expression (something that has a type and value).
     Expr => Ident, Literal, FunctionCall, BinaryOp,
@@ -134,11 +129,11 @@ pub struct BinaryOp {
     pub left: Box<Expr>,
     pub right: Box<Expr>,
     pub op: Operator,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl BinaryOp {
-    pub fn new(left: Expr, right: Expr, op: Operator, span: ByteSpan) -> BinaryOp {
+    pub fn new(left: Expr, right: Expr, op: Operator, span: Span) -> BinaryOp {
         BinaryOp {
             left: Box::new(left),
             right: Box::new(right),
@@ -158,11 +153,15 @@ pub enum Operator {
 pub struct Statement {
     pub name: String,
     pub args: Vec<Expr>,
-    pub span: ByteSpan,
+    pub span: Span,
 }
 
 impl Statement {
-    pub fn new<S: Into<String>>(name: S, args: Vec<Expr>, span: ByteSpan) -> Statement {
+    pub fn new<S: Into<String>>(
+        name: S,
+        args: Vec<Expr>,
+        span: Span,
+    ) -> Statement {
         Statement {
             name: name.into(),
             args,
@@ -226,7 +225,8 @@ mod tests {
     fn parse_a_literal() {
         let src = tokens!(123.4);
 
-        let should_be = Literal::new(123.4, ByteSpan::new(ByteIndex(0), ByteIndex(0)));
+        let should_be =
+            Literal::new(123.4, Span::new(ByteIndex(0), ByteIndex(0)));
         let should_be = Expr::Literal(should_be);
 
         let got = ExprParser::new().parse(src).unwrap();
@@ -246,7 +246,8 @@ mod tests {
     fn parse_an_ident() {
         let src = tokens!("foo");
 
-        let should_be = Ident::new("foo", ByteSpan::new(ByteIndex(0), ByteIndex(0)));
+        let should_be =
+            Ident::new("foo", Span::new(ByteIndex(0), ByteIndex(0)));
         let should_be = Expr::Ident(should_be);
 
         let got = ExprParser::new().parse(src).unwrap();
@@ -257,7 +258,8 @@ mod tests {
     fn parse_a_label() {
         let src = tokens::construct_lexer("foo:");
 
-        let should_be = Label::new("foo", ByteSpan::new(ByteIndex(0), ByteIndex(4)));
+        let should_be =
+            Label::new("foo", Span::new(ByteIndex(0), ByteIndex(4)));
 
         let got = LineParser::new().parse(src).unwrap();
         assert_eq!(got, Line::from(should_be));
@@ -267,15 +269,15 @@ mod tests {
     fn parse_an_assignment() {
         let src = tokens::construct_lexer("foo = 42");
 
-        let name = Ident::new("foo", ByteSpan::new(ByteIndex(0), ByteIndex(3)));
+        let name = Ident::new("foo", Span::new(ByteIndex(0), ByteIndex(3)));
         let value = Literal::new(
             LiteralKind::Integer(42),
-            ByteSpan::new(ByteIndex(6), ByteIndex(8)),
+            Span::new(ByteIndex(6), ByteIndex(8)),
         );
         let should_be = Assignment::new(
             name,
             value.into(),
-            ByteSpan::new(ByteIndex(0), ByteIndex(8)),
+            Span::new(ByteIndex(0), ByteIndex(8)),
         );
 
         let got = LineParser::new().parse(src).unwrap();
@@ -286,9 +288,10 @@ mod tests {
     fn parse_a_variable_declaration() {
         let src = tokens::construct_lexer("dim x as integer");
 
-        let name = Ident::new("x", ByteSpan::new(ByteIndex(4), ByteIndex(5)));
-        let ty = Ident::new("integer", ByteSpan::new(ByteIndex(9), ByteIndex(16)));
-        let should_be = Dim::new(name, ty, ByteSpan::new(ByteIndex(0), ByteIndex(16)));
+        let name = Ident::new("x", Span::new(ByteIndex(4), ByteIndex(5)));
+        let ty = Ident::new("integer", Span::new(ByteIndex(9), ByteIndex(16)));
+        let should_be =
+            Dim::new(name, ty, Span::new(ByteIndex(0), ByteIndex(16)));
 
         let got = LineParser::new().parse(src).unwrap();
         assert_eq!(got, Line::from(should_be));
@@ -309,10 +312,16 @@ mod tests {
         let should_be = Statement::new(
             "print",
             vec![
-                Expr::Ident(Ident::new("x", ByteSpan::new(ByteIndex(6), ByteIndex(7)))),
-                Expr::Ident(Ident::new("y", ByteSpan::new(ByteIndex(9), ByteIndex(10)))),
+                Expr::Ident(Ident::new(
+                    "x",
+                    Span::new(ByteIndex(6), ByteIndex(7)),
+                )),
+                Expr::Ident(Ident::new(
+                    "y",
+                    Span::new(ByteIndex(9), ByteIndex(10)),
+                )),
             ],
-            ByteSpan::new(ByteIndex(0), ByteIndex(10)),
+            Span::new(ByteIndex(0), ByteIndex(10)),
         );
 
         let got = Line::from_str(src).unwrap();
@@ -324,10 +333,10 @@ mod tests {
     fn add_two_numbers() {
         let src = tokens!("x", Token::Plus, "y");
         let should_be = BinaryOp::new(
-            Expr::Ident(Ident::new("x", ByteSpan::default())),
-            Expr::Ident(Ident::new("y", ByteSpan::default())),
+            Expr::Ident(Ident::new("x", Span::default())),
+            Expr::Ident(Ident::new("y", Span::default())),
             Operator::Add,
-            ByteSpan::default(),
+            Span::default(),
         );
 
         let got = ExprParser::new().parse(src).unwrap();

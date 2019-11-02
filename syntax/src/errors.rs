@@ -10,11 +10,15 @@ pub enum ParseError {
         location: ByteIndex,
     },
     UnrecognizedToken {
-        token: Option<(String, Span<ByteIndex>)>,
+        token: Option<(String, Span)>,
+        expected: Vec<String>,
+    },
+    UnrecognizedEOF {
+        location: ByteIndex,
         expected: Vec<String>,
     },
     ExtraToken {
-        token: (String, Span<ByteIndex>),
+        token: (String, Span),
     },
     User {
         error: LexError,
@@ -22,11 +26,11 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    pub fn span(&self) -> Option<Span<ByteIndex>> {
+    pub fn span(&self) -> Option<Span> {
         match *self {
             ParseError::InvalidToken { location } => {
                 Some(Span::new(location, location + ByteOffset(1)))
-            }
+            },
             ParseError::User {
                 error: LexError { span },
             }
@@ -55,42 +59,32 @@ impl ParseError {
             _ => None,
         }
     }
-
-    /// Update any location information attached to this `ParseError` by adding
-    /// the specified offset.
-    pub fn offset_inplace(&mut self, offset: ByteOffset) {
-        match *self {
-            ParseError::InvalidToken { ref mut location } => *location += offset,
-            ParseError::User {
-                error: LexError { ref mut span },
-            }
-            | ParseError::ExtraToken {
-                token: (_, ref mut span),
-            }
-            | ParseError::UnrecognizedToken {
-                token: Some((_, ref mut span)),
-                ..
-            } => *span = span.map(|ix| ix + offset),
-            _ => {}
-        }
-    }
 }
 
 impl<'input> From<LpError<ByteIndex, Token<'input>, LexError>> for ParseError {
     fn from(other: LpError<ByteIndex, Token<'input>, LexError>) -> ParseError {
-        let transform_tok =
-            |(l, tok, r): (ByteIndex, Token, ByteIndex)| (tok.to_string(), Span::new(l, r));
+        let transform_tok = |(l, tok, r): (ByteIndex, Token, ByteIndex)| {
+            (tok.to_string(), Span::new(l, r))
+        };
 
         match other {
-            LpError::InvalidToken { location } => ParseError::InvalidToken { location },
-            LpError::UnrecognizedToken { token, expected } => ParseError::UnrecognizedToken {
-                token: token.map(transform_tok),
+            LpError::InvalidToken { location } => {
+                ParseError::InvalidToken { location }
+            },
+            LpError::UnrecognizedToken {
+                token: (start, token, end),
+                expected,
+            } => ParseError::UnrecognizedToken {
+                token: Some((token.to_string(), Span::new(start, end))),
                 expected,
             },
             LpError::ExtraToken { token } => ParseError::ExtraToken {
                 token: transform_tok(token),
             },
             LpError::User { error } => ParseError::User { error },
+            LpError::UnrecognizedEOF { location, expected } => {
+                ParseError::UnrecognizedEOF { location, expected }
+            },
         }
     }
 }
@@ -110,11 +104,16 @@ impl Display for ParseError {
                     Some((ref got, _)) => write!(f, "found \"{}\"", got),
                     None => write!(f, "reached the end of input"),
                 }
-            }
+            },
             ParseError::ExtraToken {
                 token: (ref tok, _),
             } => write!(f, "Extra token, {:?}", tok,),
             ParseError::User { .. } => write!(f, "Invalid character"),
+            ParseError::UnrecognizedEOF { ref expected, .. } => write!(
+                f,
+                "Expected {} but reached the end of input",
+                expected.join(" or ")
+            ),
         }
     }
 }
