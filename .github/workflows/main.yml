@@ -8,13 +8,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
-      - name: Cache dependencies
-        uses: actions/cache@preview
-        with:
-          path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -33,12 +26,8 @@ jobs:
         with:
           command: doc
           args: --document-private-items
-      - name: Echo
-        env:
-          REF: ${{ toJson(github) }}
-        run: echo $REF
       - name: Deploy API Docs
-        if: github.ref == 'heads/master'
+        if: github.ref == 'refs/heads/master'
         uses: peaceiris/actions-gh-pages@v2.5.0
         env:
           ACTIONS_DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
