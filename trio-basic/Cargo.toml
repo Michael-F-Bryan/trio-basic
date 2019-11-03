@@ -6,12 +6,21 @@ edition = "2018"
 description = "The TRIO Basic compiler"
 publish = false
 
+[[bin]]
+name = "trio-basic"
+path = "src/bin/main.rs"
+doc = false
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 codespan = "0.5.0"
 codespan-reporting = "0.5.0"
-slog = "2.5.2"
+slog = { version = "2.5.2", features = ["max_level_trace", "release_max_level_debug"] }
 specs = { version = "0.15.1", features = ["specs-derive"] }
 syntax = { path = "../syntax" }
 bytecode = { path = "../bytecode" }
+structopt = "0.3.3"
+slog-term = "2.4.2"
+slog-async = "2.3.0"
+anyhow = "1.0.19"

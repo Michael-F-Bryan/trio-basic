@@ -195,7 +195,6 @@ impl<'a, 'sys> ProgramBuilder<'a, 'sys> {
     }
 
     fn insert_ident(&mut self, ident: &ast::Ident) -> Entity {
-        // we need to create one
         let ent = self
             .entities
             .build_entity()

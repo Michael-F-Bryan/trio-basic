@@ -20,7 +20,7 @@ use slog::Logger;
 use specs::{prelude::*, Component};
 
 /// The entrypoint to the compiler.
-pub fn compile<C, D>(
+pub fn compile(
     project: Project,
     logger: Logger,
     cb: &mut dyn Callback,
