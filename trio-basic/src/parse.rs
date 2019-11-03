@@ -1,9 +1,10 @@
 //! The compiler pass in charge of parsing source code.
 
 use crate::DiagnosticReporter;
-use codespan::{FileId, Files};
+use codespan::{FileId, Files, Span};
 use slog::Logger;
 use specs::{prelude::*, Component};
+use std::fmt::{self, Debug, Formatter};
 use syntax::ast::File;
 
 /// The system in charge of parsing.
@@ -28,11 +29,15 @@ impl<'a> Parse<'a> {
 }
 
 impl<'a> System<'a> for Parse<'a> {
-    type SystemData =
-        (WriteStorage<'a, Ast>, ReadExpect<'a, Files>, Entities<'a>);
+    type SystemData = (
+        WriteStorage<'a, Ast>,
+        WriteStorage<'a, Location>,
+        ReadExpect<'a, Files>,
+        Entities<'a>,
+    );
 
     fn run(&mut self, data: Self::SystemData) {
-        let (mut ast_storage, files, entities) = data;
+        let (mut ast_storage, mut locations, files, entities) = data;
 
         for &file in self.files {
             let src = files.source(file);
@@ -42,8 +47,12 @@ impl<'a> System<'a> for Parse<'a> {
 
             match File::from_str(src) {
                 Ok(root) => {
-                    let ast = Ast { root, file };
-                    entities.build_entity().with(ast, &mut ast_storage).build();
+                    let span = files.source_span(file);
+                    entities
+                        .build_entity()
+                        .with(Ast { root }, &mut ast_storage)
+                        .with(Location { file, span }, &mut locations)
+                        .build();
                 },
                 Err(e) => self.diags.on_parse_error(&e, file),
             }
@@ -51,11 +60,34 @@ impl<'a> System<'a> for Parse<'a> {
     }
 }
 
+impl<'a> Debug for Parse<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let Parse {
+            ref files,
+            ref logger,
+            diags: _,
+        } = self;
+
+        f.debug_struct("Parse")
+            .field("files", files)
+            .field("logger", logger)
+            .finish()
+    }
+}
+
+/// The top-level node containing the AST for a single file.
 #[derive(Debug, Clone, PartialEq, specs::Component)]
 #[storage(VecStorage)]
 pub struct Ast {
     pub root: File,
+}
+
+/// The location of something in source code.
+#[derive(Debug, Copy, Clone, PartialEq, specs::Component)]
+#[storage(VecStorage)]
+pub struct Location {
     pub file: FileId,
+    pub span: Span,
 }
 
 #[cfg(test)]
@@ -94,10 +126,10 @@ mod tests {
 
             sys.run_now(&mut world);
 
-            let ast_nodes: ReadStorage<Ast> = world.system_data();
-            assert_eq!(ast_nodes.count(), 1);
-            let got = ast_nodes.join().next().unwrap();
-            assert_eq!(got.file, files[0]);
+            let (ast, locations): (ReadStorage<'_, Ast>, ReadStorage<'_, Location>) = world.system_data();
+            let got: Vec<(&Ast, &Location)> = (&ast, &locations).join().collect();
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].1.file, files[0]);
         }
     }
 
