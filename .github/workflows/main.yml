@@ -33,8 +33,12 @@ jobs:
         with:
           command: doc
           args: --document-private-items
+      - name: Echo
+        env:
+          REF: ${{ toJson(github) }}
+        run: echo $REF
       - name: Deploy API Docs
-        if: github.ref == 'master'
+        if: github.ref == 'heads/master'
         uses: peaceiris/actions-gh-pages@v2.5.0
         env:
           ACTIONS_DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
