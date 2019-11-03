@@ -35,7 +35,10 @@ pub fn compile<C, D>(
         return;
     }
 
-    unimplemented!()
+    session.lower(diagnostics);
+    if cb.after_lowering(&session) == Compilation::Halt {
+        return;
+    }
 }
 
 /// The source code of a project after it is read into memory.
@@ -48,7 +51,11 @@ pub struct Project {
 /// Callbacks that can be used to see the progress of the compilation process.
 pub trait Callback {
     /// Called after the source code is parsed.
-    fn after_parsing(&self, _session: &Session) -> Compilation {
+    fn after_parsing(&mut self, _session: &Session) -> Compilation {
+        Compilation::Continue
+    }
+
+    fn after_lowering(&mut self, _session: &Session) -> Compilation {
         Compilation::Continue
     }
 }

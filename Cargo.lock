@@ -1073,6 +1073,7 @@ dependencies = [
 name = "trio-basic"
 version = "0.1.0"
 dependencies = [
+ "bytecode 0.1.0",
  "codespan 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "slog 2.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
