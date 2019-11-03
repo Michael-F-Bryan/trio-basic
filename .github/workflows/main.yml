@@ -12,7 +12,7 @@ jobs:
         uses: actions/cache@preview
         with:
           path: ~/.cargo
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
       - uses: actions-rs/toolchain@v1
