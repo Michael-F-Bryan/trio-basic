@@ -13,8 +13,8 @@ pub struct LoadSourceCode<'src> {
 
 impl<'src> LoadSourceCode<'src> {
     pub(crate) fn new(
-    files: &'src [FileId],
-    source_code: &'src Files,
+        files: &'src [FileId],
+        source_code: &'src Files,
         logger: Logger,
     ) -> Self {
         LoadSourceCode {
