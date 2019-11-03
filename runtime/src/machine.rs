@@ -15,15 +15,12 @@ pub trait Machine {
     ) -> Result<Option<Value>, CallFailed>;
 }
 
+pub type Function = Box<dyn Fn(&[Value]) -> Result<Option<Value>, CallFailed>>;
+
 #[derive(Default)]
 pub struct BasicMachine {
     pub globals: Mutex<HashMap<String, Value>>,
-    pub functions: Mutex<
-        HashMap<
-            String,
-            Box<dyn Fn(&[Value]) -> Result<Option<Value>, CallFailed>>,
-        >,
-    >,
+    pub functions: Mutex<HashMap<String, Function>>,
 }
 
 impl BasicMachine {

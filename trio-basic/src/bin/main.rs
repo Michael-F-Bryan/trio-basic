@@ -1,7 +1,9 @@
+#![feature(backtrace)]
+
 use anyhow::{Context, Error};
 use codespan::Files;
 use slog::{Drain, Level, Logger};
-use std::path::PathBuf;
+use std::{backtrace::BacktraceStatus, path::PathBuf};
 use structopt::StructOpt;
 use trio_basic::{Callback, Project};
 
@@ -21,9 +23,8 @@ fn main() {
         }
         drop(logger);
 
-        let bt = e.backtrace().to_string();
-        // HACK: workaround `std::backtrace::Backtrace::status()` is unstable
-        if bt != "disabled backtrace" && bt != "unsupported backtrace" {
+        let bt = e.backtrace();
+        if bt.status() == BacktraceStatus::Captured {
             eprintln!("{}", bt);
         }
 
