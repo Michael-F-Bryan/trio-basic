@@ -28,6 +28,7 @@ impl<'a> Lowering<'a> {
 }
 
 impl<'sys, 'a: 'sys> System<'sys> for Lowering<'a> {
+    #[allow(clippy::type_complexity)]
     type SystemData = (
         ReadStorage<'sys, Ast>,
         WriteStorage<'sys, Program>,
@@ -73,16 +74,14 @@ impl<'sys, 'a: 'sys> System<'sys> for Lowering<'a> {
 
 impl<'a> Debug for Lowering<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let Lowering {
-            ref logger,
-            diags: _,
-        } = self;
+        let Lowering { ref logger, .. } = self;
 
         f.debug_struct("Lowering").field("logger", logger).finish()
     }
 }
 
 /// Converts a single [`syntax::ast::File`] into a [`Program`].
+#[allow(clippy::too_many_arguments)]
 pub fn lower<'sys>(
     node: &syntax::ast::File,
     node_location: Location,
@@ -195,8 +194,7 @@ impl<'a, 'sys> ProgramBuilder<'a, 'sys> {
     }
 
     fn insert_ident(&mut self, ident: &ast::Ident) -> Entity {
-        let ent = self
-            .entities
+        self.entities
             .build_entity()
             .with(
                 Identifier {
@@ -211,9 +209,7 @@ impl<'a, 'sys> ProgramBuilder<'a, 'sys> {
                 },
                 &mut self.locations,
             )
-            .build();
-
-        ent
+            .build()
     }
 }
 
@@ -223,12 +219,7 @@ impl<'a, 'sys> Debug for ProgramBuilder<'a, 'sys> {
             ref variable_declarations,
             ref logger,
             file,
-
-            variables: _,
-            identifiers: _,
-            entities: _,
-            locations: _,
-            diags: _,
+            ..
         } = self;
 
         f.debug_struct("InstructionBlockBuilder")

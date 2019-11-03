@@ -55,10 +55,7 @@ impl<'sys, 'a: 'sys> System<'sys> for Parse<'a> {
 
 impl<'a> Debug for Parse<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let Parse {
-            ref logger,
-            diags: _,
-        } = self;
+        let Parse { ref logger, .. } = self;
 
         f.debug_struct("Parse").field("logger", logger).finish()
     }

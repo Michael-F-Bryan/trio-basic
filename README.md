@@ -1,5 +1,7 @@
 # TRIO Basic
 
+[![GitHub Actions Status](https://github.com/Michael-F-Bryan/trio-basic/workflows/Continuous%20integration/badge.svg)](https://github.com/Michael-F-Bryan/trio-basic/actions)
+
 A proof-of-concept compiler and runtime for the [TRIO Basic][trio] programming
 language.
 
