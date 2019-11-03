@@ -60,13 +60,13 @@ macro_rules! impl_from_str {
     ($type:ty, $parser:ident) => {
         impl $type {
             /// Try to parse the provided string as this type of AST node.
-            pub fn from_str(
+            pub fn parse(
                 src: &str,
             ) -> ::std::result::Result<Self, $crate::ParseError> {
                 let src = $crate::tokens::construct_lexer(src);
                 $crate::grammar::$parser::new()
                     .parse(src)
-                    .map_err(|e| $crate::ParseError::from(e))
+                    .map_err($crate::ParseError::from)
             }
         }
     };

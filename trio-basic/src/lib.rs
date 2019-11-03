@@ -7,14 +7,17 @@
 )]
 
 pub mod diagnostics;
+pub mod lowering;
 pub mod parse;
 mod session;
+mod source_code;
 
 pub use diagnostics::DiagnosticReporter;
 pub use session::Session;
 
-use codespan::{FileId, Files};
+use codespan::{FileId, Files, Span};
 use slog::Logger;
+use specs::{prelude::*, Component};
 
 /// The entrypoint to the compiler.
 pub fn compile<C, D>(
@@ -23,9 +26,11 @@ pub fn compile<C, D>(
     cb: &mut dyn Callback,
     diagnostics: &dyn DiagnosticReporter,
 ) {
-    let mut session = Session::new(project.source_code, logger.clone());
+    let mut session = Session::new(logger.clone());
 
-    session.parse(&project.files, diagnostics);
+    session.load_source_code(&project.files, &project.source_code);
+
+    session.parse(diagnostics);
     if cb.after_parsing(&session) == Compilation::Halt {
         return;
     }
@@ -53,4 +58,12 @@ pub trait Callback {
 pub enum Compilation {
     Continue,
     Halt,
+}
+
+/// The location of something in source code.
+#[derive(Debug, Copy, Clone, PartialEq, specs::Component)]
+#[storage(VecStorage)]
+pub struct Location {
+    pub file: FileId,
+    pub span: Span,
 }

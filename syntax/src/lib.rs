@@ -16,7 +16,7 @@ pub mod tokens;
 
 pub use crate::errors::ParseError;
 
-lalrpop_mod!(pub(crate) grammar);
+lalrpop_util::lalrpop_mod!(#[allow(clippy::all)] pub(crate) grammar);
 
 use crate::ast::File;
 
@@ -29,4 +29,4 @@ use crate::ast::File;
 /// messages that actually point to where the error happened) you should either
 /// update locations via the `offset_inplace()` method or use the
 /// `parse_from_filemap()` map.
-pub fn parse(src: &str) -> Result<File, ParseError> { File::from_str(src) }
+pub fn parse(src: &str) -> Result<File, ParseError> { File::parse(src) }

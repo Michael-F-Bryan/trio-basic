@@ -25,7 +25,6 @@ use std::{
 ///   Word(String),
 /// }
 ///
-/// # fn run() -> Result<(), LexError> {
 /// let src = "Hello 5 world";
 ///
 /// // create the lexer
@@ -49,9 +48,7 @@ use std::{
 ///
 /// // as a sanity check, make sure we got back what we expected
 /// assert_eq!(tokens, should_be);
-/// # Ok(())
-/// # }
-/// # fn main() { run().unwrap() }
+/// # Result::<(), Box<dyn std::error::Error>>::Ok(())
 /// ```
 ///
 /// If you want to avoid unnecessary copies, the `Token` type can contain
@@ -65,7 +62,6 @@ use std::{
 ///   Word(&'input str), // <-- borrowing part of the original string
 /// }
 ///
-/// # fn run() -> Result<(), LexError> {
 /// let src = "Hello 5 world";
 ///
 /// let mut lexer = Lexer::new(src);
@@ -74,19 +70,19 @@ use std::{
 /// lexer.register_pattern(r"^\w+", |s| Token::Word(s));  // <-- no "to_string()"!
 ///
 /// let got = lexer.collect::<Result<Vec<_>, _>>()?;
-/// # Ok(())
-/// # }
-/// # fn main() { run().unwrap() }
+/// # Result::<(), Box<dyn std::error::Error>>::Ok(())
 /// ```
 ///
 /// This is completely safe because the `Token: 'input` lifetime on `Lexer` will
 /// ensure tokens can never outlive their source code.
 pub struct Lexer<'input, Token: 'input> {
     src: &'input str,
-    patterns: Vec<(Regex, Box<dyn Fn(&'input str) -> Token>)>,
+    patterns: Vec<(Regex, LexFunc<'input, Token>)>,
     skips: Regex,
     ix: usize,
 }
+
+type LexFunc<'input, Token> = Box<dyn Fn(&'input str) -> Token>;
 
 impl<'input, Token: 'input> Lexer<'input, Token> {
     /// Create a new `Lexer` with an empty pattern table and which ignores all
@@ -120,7 +116,7 @@ impl<'input, Token: 'input> Lexer<'input, Token> {
         F: Fn(&'input str) -> Token + 'static,
     {
         assert!(
-            pattern.starts_with("^"),
+            pattern.starts_with('^'),
             "All patterns must match the beginning of the text"
         );
 
@@ -140,24 +136,19 @@ impl<'input, Token: 'input> Lexer<'input, Token> {
     ///
     /// ```rust
     /// # use syntax::lexer::Lexer;
-    /// # fn make_lexer() -> Lexer<'static, &'static str> {
     /// # let some_source_text = "# this is a comment\ntext";
     /// let lexer = Lexer::new(some_source_text).skipping(r"^\s+|(?m)#.*$");
-    /// # lexer
-    /// # }
+    /// # let mut lexer = lexer;
     /// # // make sure our pattern actually does what it says it does
-    /// # fn main() {
-    /// #  let mut l = make_lexer();
-    /// #  l.register_pattern(r"^\w+", |s| s);
-    /// #  assert_eq!(l.next().unwrap().unwrap().1, "text");
-    /// # }
+    /// # lexer.register_pattern(r"^\w+", |s| s);
+    /// # assert_eq!(lexer.next().unwrap().unwrap().1, "text");
     /// ```
     ///
     /// Note that you need to enable multiline regex patterns (`(?m)`) when
     /// skipping to the end of a line.
     pub fn skipping(self, pattern: &str) -> Lexer<'input, Token> {
         assert!(
-            pattern.starts_with("^"),
+            pattern.starts_with('^'),
             "All patterns must match the beginning of the text"
         );
         let skips = Regex::new(pattern).expect("Invalid regex");

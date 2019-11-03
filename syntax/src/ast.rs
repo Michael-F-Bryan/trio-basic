@@ -314,7 +314,7 @@ mod tests {
             Span::new(ByteIndex(0), ByteIndex(10)),
         );
 
-        let got = Line::from_str(src).unwrap();
+        let got = Line::parse(src).unwrap();
 
         assert_eq!(got, Line::Statement(should_be));
     }

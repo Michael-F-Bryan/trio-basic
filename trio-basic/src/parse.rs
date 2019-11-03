@@ -1,60 +1,53 @@
 //! The compiler pass in charge of parsing source code.
 
-use crate::DiagnosticReporter;
-use codespan::{FileId, Files, Span};
+use crate::{source_code::File, DiagnosticReporter, Location};
 use slog::Logger;
 use specs::{prelude::*, Component};
 use std::fmt::{self, Debug, Formatter};
-use syntax::ast::File;
+use syntax::ast;
 
 /// The system in charge of parsing.
 pub struct Parse<'a> {
     logger: Logger,
-    files: &'a [FileId],
     diags: &'a dyn DiagnosticReporter,
 }
 
 impl<'a> Parse<'a> {
-    pub fn new(
-        files: &'a [FileId],
-        diags: &'a dyn DiagnosticReporter,
-        logger: Logger,
-    ) -> Self {
-        Parse {
-            files,
-            diags,
-            logger,
-        }
+    pub fn new(diags: &'a dyn DiagnosticReporter, logger: Logger) -> Self {
+        Parse { diags, logger }
     }
 }
 
-impl<'a> System<'a> for Parse<'a> {
+impl<'sys, 'a: 'sys> System<'sys> for Parse<'a> {
     type SystemData = (
-        WriteStorage<'a, Ast>,
-        WriteStorage<'a, Location>,
-        ReadExpect<'a, Files>,
-        Entities<'a>,
+        WriteStorage<'sys, Ast>,
+        ReadStorage<'sys, File>,
+        WriteStorage<'sys, Location>,
+        Entities<'sys>,
     );
 
     fn run(&mut self, data: Self::SystemData) {
-        let (mut ast_storage, mut locations, files, entities) = data;
+        let (mut ast_storage, files, mut locations, entities) = data;
 
-        for &file in self.files {
-            let src = files.source(file);
+        for (file, ent) in (&files, &entities).join() {
+            let location = locations
+                .get(ent)
+                .copied()
+                .expect("All source files have a location");
+
             slog::debug!(self.logger, "Parsing a file";
-                "name" => files.name(file),
-                "length" => src.len());
+                "name" => &file.name,
+                "length" => file.src.len());
 
-            match File::from_str(src) {
+            match syntax::parse(&file.src) {
                 Ok(root) => {
-                    let span = files.source_span(file);
                     entities
                         .build_entity()
                         .with(Ast { root }, &mut ast_storage)
-                        .with(Location { file, span }, &mut locations)
+                        .with(location, &mut locations)
                         .build();
                 },
-                Err(e) => self.diags.on_parse_error(&e, file),
+                Err(e) => self.diags.on_parse_error(&e, location.file),
             }
         }
     }
@@ -63,15 +56,11 @@ impl<'a> System<'a> for Parse<'a> {
 impl<'a> Debug for Parse<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let Parse {
-            ref files,
             ref logger,
             diags: _,
         } = self;
 
-        f.debug_struct("Parse")
-            .field("files", files)
-            .field("logger", logger)
-            .finish()
+        f.debug_struct("Parse").field("logger", logger).finish()
     }
 }
 
@@ -79,21 +68,17 @@ impl<'a> Debug for Parse<'a> {
 #[derive(Debug, Clone, PartialEq, specs::Component)]
 #[storage(VecStorage)]
 pub struct Ast {
-    pub root: File,
-}
-
-/// The location of something in source code.
-#[derive(Debug, Copy, Clone, PartialEq, specs::Component)]
-#[storage(VecStorage)]
-pub struct Location {
-    pub file: FileId,
-    pub span: Span,
+    pub root: ast::File,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::diagnostics::{PanicReporter, Recorder};
+    use crate::{
+        diagnostics::{PanicReporter, Recorder},
+        source_code::LoadSourceCode,
+    };
+    use codespan::{FileId, Files};
     use slog::Discard;
 
     macro_rules! system_test {
@@ -102,6 +87,9 @@ mod tests {
             #[test]
             fn $name() {
                 let $logger = Logger::root(Discard, slog::o!());
+                let mut $world = World::new();
+
+                // "load" our source code into memory
                 let mut source_code = Files::new();
 
                 let mut $files = Vec::<FileId>::new();
@@ -109,9 +97,9 @@ mod tests {
                     let file_id = source_code.add($filename, $src);
                     $files.push(file_id);
                 )*
-
-                let mut $world = World::new();
-                $world.insert(source_code);
+                let mut load_src = LoadSourceCode::new(&$files, &source_code, $logger.clone());
+                RunNow::setup(&mut load_src, &mut $world);
+                RunNow::run_now(&mut load_src, &mut $world);
 
                 $body;
             }
@@ -121,7 +109,7 @@ mod tests {
     system_test! {
         run_the_parse_system, "main" => "DIM x AS INTEGER";
         |world, files, logger| {
-            let mut sys = Parse::new(&files, &PanicReporter, logger.clone());
+            let mut sys = Parse::new(&PanicReporter, logger.clone());
             RunNow::setup(&mut sys, &mut world);
 
             sys.run_now(&mut world);
@@ -137,7 +125,7 @@ mod tests {
         detect_parse_failure, "main" => "DIM x";
         |world, files, logger| {
             let diags = Recorder::default();
-            let mut sys = Parse::new(&files, &diags, logger.clone());
+            let mut sys = Parse::new(&diags, logger.clone());
             RunNow::setup(&mut sys, &mut world);
 
             sys.run_now(&mut world);

@@ -1,7 +1,10 @@
-use crate::{parse::Parse, DiagnosticReporter};
+use crate::{
+    lowering::Lowering, parse::Parse, source_code::LoadSourceCode,
+    DiagnosticReporter,
+};
 use codespan::{FileId, Files};
 use slog::Logger;
-use specs::{EntityBuilder, RunNow, World, WorldExt};
+use specs::{EntityBuilder, RunNow, System, World, WorldExt};
 use std::fmt::{self, Debug, Formatter};
 
 /// A parsing session, containing all the information and data structures
@@ -12,11 +15,11 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(source_code: Files, logger: Logger) -> Self {
-        let mut world = World::new();
-        world.insert(source_code);
-
-        Session { world, logger }
+    pub fn new(logger: Logger) -> Self {
+        Session {
+            world: World::new(),
+            logger,
+        }
     }
 
     pub fn world(&self) -> &World { &self.world }
@@ -25,19 +28,38 @@ impl Session {
         self.world.create_entity()
     }
 
-    pub fn source_code<'sess>(
-        &'sess self,
-    ) -> impl std::ops::Deref<Target = Files> + 'sess {
-        self.world.fetch::<Files>()
+    /// Adds all files in the project to the compilation session.
+    pub fn load_source_code(&mut self, files: &[FileId], source_code: &Files) {
+        let logger =
+            self.logger.new(slog::o!("phase" => "loading-source-code"));
+        self.run_pass(LoadSourceCode::new(files, source_code, logger));
+        self.world.maintain();
     }
 
     /// Execute the parsing pass.
-    pub fn parse(&mut self, files: &[FileId], diags: &dyn DiagnosticReporter) {
+    pub fn parse(&mut self, diags: &dyn DiagnosticReporter) {
         let logger = self.logger.new(slog::o!("phase" => "parse"));
-        let mut parse = Parse::new(files, diags, logger);
+        self.run_pass(Parse::new(diags, logger));
+        self.world.maintain();
+    }
 
-        parse.setup(&mut self.world);
-        parse.run_now(&self.world);
+    pub fn lower(&mut self, diags: &dyn DiagnosticReporter) {
+        let logger = self.logger.new(slog::o!("phase" => "lowering"));
+        self.run_pass(Lowering::new(diags, logger));
+        self.world.maintain();
+    }
+
+    fn run_pass<'a, S>(&'a mut self, mut pass: S)
+    where
+        S: System<'a>,
+    {
+        slog::debug!(self.logger, "Setting up a pass";
+            "name" => std::any::type_name::<S>());
+        pass.setup(&mut self.world);
+
+        slog::debug!(self.logger, "Running a pass";
+            "name" => std::any::type_name::<S>());
+        pass.run_now(&self.world);
     }
 }
 
