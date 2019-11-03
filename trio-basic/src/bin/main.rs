@@ -22,6 +22,7 @@ fn main() {
         drop(logger);
 
         let bt = e.backtrace().to_string();
+        // HACK: workaround `std::backtrace::Backtrace::status()` is unstable
         if bt != "disabled backtrace" && bt != "unsupported backtrace" {
             eprintln!("{}", bt);
         }
